@@ -1,4 +1,3 @@
-// src/components/AchievementsView.js
 import React, { useState, useEffect } from 'react';
 
 const AchievementsView = ({ 
@@ -7,21 +6,29 @@ const AchievementsView = ({
   getColumns, 
   getTasks,
   onBack,
-  earnedAchievements = []
+  earnedAchievements = [],
+  avatarLevel = 1,
+  streakData = {
+    currentStreak: 0,
+    longestStreak: 0
+  }
 }) => {
   const [achievements, setAchievements] = useState([]);
   const [stats, setStats] = useState({
     tasksCreated: 0,
     tasksCompleted: 0,
-    streakDays: 0,
+    streakDays: streakData.currentStreak || 0,
+    longestStreak: streakData.longestStreak || 0,
     boardsCreated: 0,
     mostProductiveDay: null,
-    totalMoves: 0
+    totalMoves: 0,
+    weekendWarrior: 0,
+    perfectWeeks: 0
   });
   
   useEffect(() => {
     calculateStats();
-  }, [groups]);
+  }, [groups, streakData]);
   
   const calculateStats = () => {
     let tasksCreated = 0;
@@ -29,6 +36,7 @@ const AchievementsView = ({
     let boardsCreated = 0;
     const completionDates = [];
     const allTasks = [];
+    const weekendCompletions = [];
     
     groups.forEach(group => {
       const boards = getBoards(group.id);
@@ -47,9 +55,16 @@ const AchievementsView = ({
             if (task.completed) {
               tasksCompleted++;
               if (task.updatedAt) {
-                const completionDate = new Date(task.updatedAt).toDateString();
-                if (!completionDates.includes(completionDate)) {
-                  completionDates.push(completionDate);
+                const completionDate = new Date(task.updatedAt);
+                const dateString = completionDate.toDateString();
+                
+                if (!completionDates.includes(dateString)) {
+                  completionDates.push(dateString);
+                  
+                  const day = completionDate.getDay();
+                  if (day === 0 || day === 6) { // 0 is Sunday, 6 is Saturday
+                    weekendCompletions.push(dateString);
+                  }
                 }
               }
             }
@@ -58,8 +73,10 @@ const AchievementsView = ({
       });
     });
     
-    // for testing only. NOTE TO SELF REAL APP TRACK THIS PROPERLY 
-    const streakDays = Math.min(7, completionDates.length);
+    const perfectWeeks = calculatePerfectWeeks(completionDates);
+    
+    const streakDays = streakData.currentStreak || 0;
+    const longestStreak = streakData.longestStreak || 0;
     
     const completionsByDay = {};
     allTasks.forEach(task => {
@@ -71,27 +88,70 @@ const AchievementsView = ({
     
     const mostProductiveDay = Object.entries(completionsByDay).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     
-    // fake total moves (would be tracked in real app) just for testing
     const totalMoves = Math.floor(tasksCreated * 1.5);
     
     setStats({
       tasksCreated,
       tasksCompleted,
       streakDays,
+      longestStreak,
       boardsCreated,
       mostProductiveDay,
       totalMoves,
+      weekendWarrior: weekendCompletions.length,
+      perfectWeeks,
       level: calculateLevel(tasksCompleted)
     });
     
-    generateAchievements(tasksCreated, tasksCompleted, streakDays, boardsCreated, totalMoves);
+    generateAchievements(
+      tasksCreated, 
+      tasksCompleted, 
+      streakDays, 
+      longestStreak,
+      boardsCreated, 
+      totalMoves, 
+      weekendCompletions.length,
+      perfectWeeks
+    );
+  };
+  
+  const calculatePerfectWeeks = (dates) => {
+    // kiv,  need to group dates by week and count
+    if (dates.length === 0) return 0;
+    
+    const sortedDates = dates.map(d => new Date(d)).sort((a, b) => a - b);
+    
+    // Group by week
+    const weekMap = {};
+    sortedDates.forEach(date => {
+      // Get week number (simplified approach)
+      const year = date.getFullYear();
+      const weekNum = Math.floor((date - new Date(year, 0, 1)) / (7 * 24 * 60 * 60 * 1000));
+      const weekKey = `${year}-${weekNum}`;
+      
+      if (!weekMap[weekKey]) {
+        weekMap[weekKey] = new Set();
+      }
+      weekMap[weekKey].add(date.getDay());
+    });
+    
+    return Object.values(weekMap).filter(daySet => daySet.size >= 5).length;
   };
   
   const calculateLevel = (tasksCompleted) => {
     return Math.floor(tasksCompleted / 10) + 1;
   };
   
-  const generateAchievements = (tasksCreated, tasksCompleted, streakDays, boardsCreated, totalMoves) => {
+  const generateAchievements = (
+    tasksCreated, 
+    tasksCompleted, 
+    streakDays, 
+    longestStreak,
+    boardsCreated, 
+    totalMoves, 
+    weekendCompletions,
+    perfectWeeks
+  ) => {
     const earnedAchievementsMap = {};
     earnedAchievements.forEach(achievement => {
       earnedAchievementsMap[achievement.id] = true;
@@ -129,7 +189,6 @@ const AchievementsView = ({
         unlocked: tasksCreated >= 50 || earnedAchievementsMap['task-wizard']
       },
       
-      // Tasks Completed Achievements
       {
         id: 'first-completion',
         title: 'Mission Accomplished',
@@ -181,6 +240,79 @@ const AchievementsView = ({
         maxProgress: 7,
         unlocked: streakDays >= 7 || earnedAchievementsMap['habit-former']
       },
+      {
+        id: 'streak-master',
+        title: 'Streak Master',
+        description: 'Complete tasks on 14 consecutive days',
+        icon: '🔥',
+        category: 'streaks',
+        progress: Math.min(streakDays, 14),
+        maxProgress: 14,
+        unlocked: streakDays >= 14 || earnedAchievementsMap['streak-master']
+      },
+      {
+        id: 'streak-legend',
+        title: 'Streak Legend',
+        description: 'Complete tasks on 30 consecutive days',
+        icon: '👑',
+        category: 'streaks',
+        progress: Math.min(streakDays, 30),
+        maxProgress: 30,
+        unlocked: streakDays >= 30 || earnedAchievementsMap['streak-legend']
+      },
+      {
+        id: 'longest-streak-14',
+        title: 'Unstoppable',
+        description: 'Achieve a 14-day streak at any point',
+        icon: '⏱️',
+        category: 'streaks',
+        progress: Math.min(longestStreak, 14),
+        maxProgress: 14,
+        unlocked: longestStreak >= 14 || earnedAchievementsMap['longest-streak-14']
+      },
+      
+      // Weekend Achievements
+      {
+        id: 'weekend-warrior',
+        title: 'Weekend Warrior',
+        description: 'Complete tasks on 5 different weekends',
+        icon: '🏄‍♂️',
+        category: 'consistency',
+        progress: Math.min(weekendCompletions, 5),
+        maxProgress: 5,
+        unlocked: weekendCompletions >= 5 || earnedAchievementsMap['weekend-warrior']
+      },
+      {
+        id: 'weekender',
+        title: 'Dedicated Weekender',
+        description: 'Complete tasks on 15 different weekends',
+        icon: '🌞',
+        category: 'consistency',
+        progress: Math.min(weekendCompletions, 15),
+        maxProgress: 15,
+        unlocked: weekendCompletions >= 15 || earnedAchievementsMap['weekender']
+      },
+      
+      {
+        id: 'perfect-week',
+        title: 'Perfect Week',
+        description: 'Complete tasks on 5+ days in a single week',
+        icon: '📊',
+        category: 'consistency',
+        progress: Math.min(perfectWeeks, 1),
+        maxProgress: 1,
+        unlocked: perfectWeeks >= 1 || earnedAchievementsMap['perfect-week']
+      },
+      {
+        id: 'perfect-month',
+        title: 'Perfect Month',
+        description: 'Achieve 4 perfect weeks',
+        icon: '📈',
+        category: 'consistency',
+        progress: Math.min(perfectWeeks, 4),
+        maxProgress: 4,
+        unlocked: perfectWeeks >= 4 || earnedAchievementsMap['perfect-month']
+      },
       
       {
         id: 'organizer',
@@ -191,6 +323,16 @@ const AchievementsView = ({
         progress: Math.min(boardsCreated, 3),
         maxProgress: 3,
         unlocked: boardsCreated >= 3 || earnedAchievementsMap['organizer']
+      },
+      {
+        id: 'board-master',
+        title: 'Board Master',
+        description: 'Create 10 boards',
+        icon: '📋',
+        category: 'organization',
+        progress: Math.min(boardsCreated, 10),
+        maxProgress: 10,
+        unlocked: boardsCreated >= 10 || earnedAchievementsMap['board-master']
       },
       
       {
@@ -222,7 +364,6 @@ const AchievementsView = ({
     return Math.min(100, Math.floor((current / max) * 100));
   };
   
-  // calculate your exp and the exp needed to level up
   const calculateXP = (tasksCompleted) => {
     const currentLevel = calculateLevel(tasksCompleted);
     const xpForCurrentLevel = (currentLevel - 1) * 10;
@@ -297,18 +438,18 @@ const AchievementsView = ({
           </div>
           
           <div className="bg-gray-900 rounded-lg p-3">
-            <div className="text-3xl font-bold text-indigo-400 mb-1">{stats.tasksCreated}</div>
-            <div className="text-gray-400 text-sm">Tasks Created</div>
-          </div>
-          
-          <div className="bg-gray-900 rounded-lg p-3">
             <div className="text-3xl font-bold text-indigo-400 mb-1">{stats.streakDays}</div>
             <div className="text-gray-400 text-sm">Day Streak</div>
           </div>
           
           <div className="bg-gray-900 rounded-lg p-3">
-            <div className="text-3xl font-bold text-indigo-400 mb-1">{stats.boardsCreated}</div>
-            <div className="text-gray-400 text-sm">Boards Created</div>
+            <div className="text-3xl font-bold text-indigo-400 mb-1">{stats.longestStreak}</div>
+            <div className="text-gray-400 text-sm">Longest Streak</div>
+          </div>
+          
+          <div className="bg-gray-900 rounded-lg p-3">
+            <div className="text-3xl font-bold text-indigo-400 mb-1">{stats.perfectWeeks}</div>
+            <div className="text-gray-400 text-sm">Perfect Weeks</div>
           </div>
         </div>
       </div>
@@ -325,11 +466,11 @@ const AchievementsView = ({
           </div>
           
           <div className="bg-gray-900 rounded-lg p-4 flex items-center">
-            <span className="text-3xl mr-3">🏃</span>
+            <span className="text-3xl mr-3">🌞</span>
             <div>
-              <div className="text-gray-300">Task Completion Rate</div>
+              <div className="text-gray-300">Weekend Warrior</div>
               <div className="text-white font-medium">
-                {stats.tasksCreated ? Math.round((stats.tasksCompleted / stats.tasksCreated) * 100) : 0}% of tasks completed
+                {stats.weekendWarrior} weekend tasks completed
               </div>
             </div>
           </div>
@@ -347,12 +488,14 @@ const AchievementsView = ({
                   key={achievement.id} 
                   className={`relative rounded-lg p-4 border ${
                     achievement.unlocked 
-                      ? 'bg-gray-700 border-indigo-500' 
+                      ? 'bg-gray-700 border-indigo-500 achievement-glow' 
                       : 'bg-gray-850 border-gray-700 opacity-70'
                   }`}
                 >
                   <div className="flex items-start mb-3">
-                    <div className="text-3xl mr-3">{achievement.icon}</div>
+                    <div className={`text-3xl mr-3 ${achievement.unlocked ? 'achievement-icon-animate' : ''}`}>
+                      {achievement.icon}
+                    </div>
                     <div>
                       <h4 className="text-white font-medium">{achievement.title}</h4>
                       <p className="text-gray-400 text-sm">{achievement.description}</p>
@@ -367,7 +510,7 @@ const AchievementsView = ({
                     <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden">
                       <div 
                         className={`h-full rounded-full ${
-                          achievement.unlocked ? 'bg-emerald-500' : 'bg-indigo-600'
+                          achievement.unlocked ? 'bg-emerald-500 achievement-progress-pulse' : 'bg-indigo-600'
                         }`}
                         style={{ width: `${calculateProgress(achievement.progress, achievement.maxProgress)}%` }}
                       ></div>
@@ -387,6 +530,35 @@ const AchievementsView = ({
           </div>
         ))}
       </div>
+      
+      <style jsx>{`
+        @keyframes icon-bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+        
+        @keyframes glow-pulse {
+          0%, 100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.3); }
+          50% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.6); }
+        }
+        
+        @keyframes progress-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+        
+        .achievement-icon-animate {
+          animation: icon-bounce 2s infinite;
+        }
+        
+        .achievement-glow {
+          animation: glow-pulse 3s infinite;
+        }
+        
+        .achievement-progress-pulse {
+          animation: progress-pulse 2s infinite;
+        }
+      `}</style>
     </div>
   );
 };

@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState, useEffect } from 'react';
 import { 
   initializeStore, 
@@ -13,14 +12,19 @@ import {
   updateTask,
   deleteTask,
   moveTask,
-  subscribeToChanges
+  subscribeToChanges,
+  deleteGroup
 } from './data/store';
 
-import GroupsView from './components/GroupsView';
+import NeonLoader from './components/NeonLoader';
+import PageTransition from './components/PageTransition';
+import EnhancedGroupsView from './components/EnhancedGroupsView';
 import BoardsView from './components/BoardsView';
 import BoardView from './components/BoardView';
 import DashboardView from './components/DashboardView';
 import AchievementsView from './components/AchievementsView';
+import SearchTasksView from './components/SearchTasksView';
+import GraphView from './components/GraphView'; 
 import NotificationSystem from './components/NotificationSystem';
 import Sidebar from './components/Sidebar';
 
@@ -30,7 +34,7 @@ const App = () => {
   const [currentGroupId, setCurrentGroupId] = useState(null);
   const [currentBoardId, setCurrentBoardId] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
-  const [currentView, setCurrentView] = useState('groups'); // 'groups', 'boards', 'board', 'dashboard', 'achievements'
+  const [currentView, setCurrentView] = useState('groups'); // 'groups', 'boards', 'board', 'dashboard', 'achievements', 'search', 'graph'
   const [notifications, setNotifications] = useState([]);
   const [achievements, setAchievements] = useState([]);
 
@@ -105,6 +109,18 @@ const App = () => {
     deleteTask(taskId);
   };
 
+  const handleDeleteGroup = (groupId) => {
+    deleteGroup(groupId);
+    refreshGroups();
+    
+    if (currentGroupId === groupId) {
+      setCurrentGroupId(null);
+      setCurrentBoardId(null);
+      setCurrentView('groups');
+    }
+  };
+  
+
   const handleCreateTask = (columnId, content) => {
     createTask(columnId, content);
     
@@ -149,6 +165,20 @@ const App = () => {
   
   const handleShowAchievements = () => {
     setCurrentView('achievements');
+  };
+  
+  const handleShowSearch = () => {
+    setCurrentView('search');
+  };
+  
+  const handleShowGraph = () => {
+    setCurrentView('graph');
+  };
+  
+  const handleTaskClick = (task) => {
+    setCurrentGroupId(task.groupId);
+    setCurrentBoardId(task.boardId);
+    setCurrentView('board');
   };
 
   const handleBackToGroups = () => {
@@ -234,7 +264,6 @@ const App = () => {
       achievement => achievement.condition && !achievementIds.includes(achievement.id)
     );
     
-    // new achievements
     if (newAchievements.length > 0) {
       setAchievements([...achievements, ...newAchievements]);
       
@@ -267,38 +296,44 @@ const App = () => {
 
   if (!isLoaded) {
     return (
-      <div className="flex h-screen bg-gray-900 text-white">
-        <div className="flex flex-col items-center justify-center w-full h-full">
-          <div className="w-10 h-10 border-3 border-t-indigo-500 border-gray-700 rounded-full animate-spin mb-4"></div>
-          <p className="text-gray-300">Loading...</p>
+      <div className="flex h-screen bg-metallic-gradient">
+        <div className="flex justify-center items-center w-full">
+          <NeonLoader text="Initializing Chalk..." />
         </div>
       </div>
     );
   }
 
-  // render main app here
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-900 text-white">
+    <div className="flex h-screen overflow-hidden bg-metallic-gradient text-white">
       <Sidebar 
         groups={groups}
         currentGroupId={currentGroupId}
         onSelectGroup={handleSelectGroup}
         onCreateGroup={handleCreateGroup}
+        onDeleteGroup={handleDeleteGroup}
         isDarkMode={isDarkMode}
         onToggleDarkMode={toggleDarkMode}
         onShowDashboard={handleShowDashboard}
         onShowAchievements={handleShowAchievements}
+        onShowSearch={handleShowSearch}
+        onShowGraph={handleShowGraph}
       />
       
       <div className="flex-1 overflow-hidden flex flex-col">
-        {currentView === 'groups' && (
-          <GroupsView 
+      {currentView === 'groups' && (
+        <PageTransition transitionKey="groups">
+          <EnhancedGroupsView 
             groups={groups} 
             onSelectGroup={handleSelectGroup} 
             onCreateGroup={handleCreateGroup}
+            onDeleteGroup={handleDeleteGroup}
+            getBoards={getBoards}
+            getColumns={getColumns}
+            getTasks={getTasks}
           />
-        )}
-        
+        </PageTransition>
+      )}
         {currentView === 'boards' && (
           <BoardsView 
             group={getCurrentGroup()} 
@@ -346,13 +381,36 @@ const App = () => {
           />
         )}
         
+        {currentView === 'search' && (
+          <SearchTasksView
+            groups={groups}
+            getBoards={getBoards}
+            getColumns={getColumns}
+            getTasks={getTasks}
+            onBack={handleBackToGroups}
+            onTaskClick={handleTaskClick}
+          />
+        )}
+        
+        {/* Add the new GraphView component */}
+        {currentView === 'graph' && (
+          <GraphView
+            groups={groups}
+            getBoards={getBoards}
+            getColumns={getColumns}
+            getTasks={getTasks}
+            onSelectTask={handleTaskClick}
+            onSelectBoard={handleSelectBoard}
+            onBack={handleBackToGroups}
+          />
+        )}
+        </div>
         <NotificationSystem 
           notifications={notifications}
           onDismiss={removeNotification}
         />
       </div>
-    </div>
-  );
+    );
 };
 
 export default App;

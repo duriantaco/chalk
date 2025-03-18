@@ -1,0 +1,113 @@
+/* src/3dCards.css */
+.card-3d-container {
+    perspective: 1000px;
+    transform-style: preserve-3d;
+    width: 100%;
+  }
+  
+  .card-3d {
+    transition: transform 0.3s ease;
+    transform-style: preserve-3d;
+    position: relative;
+  }
+  
+  .card-3d:hover {
+    transform: translateY(-5px) rotateX(5deg) rotateY(-5deg);
+  }
+  
+  .card-3d::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    backdrop-filter: blur(3px);
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  
+  .card-3d:hover::before {
+    opacity: 0.2;
+  }
+  
+  .card-3d-high {
+    box-shadow: 0 10px 20px -10px rgba(239, 68, 68, 0.3);
+  }
+  
+  .card-3d-medium {
+    box-shadow: 0 10px 20px -10px rgba(245, 158, 11, 0.3);
+  }
+  
+  .card-3d-low {
+    box-shadow: 0 10px 20px -10px rgba(16, 185, 129, 0.3);
+  }
+  
+  /* Add depth layers to card content */
+  .card-3d-content {
+    transform-style: preserve-3d;
+  }
+  
+  .card-3d-layer-1 {
+    transform: translateZ(2px);
+    position: relative;
+    z-index: 3;
+  }
+  
+  .card-3d-layer-2 {
+    transform: translateZ(5px);
+    position: relative;
+    z-index: 4;
+  }
+  
+  .card-3d-layer-3 {
+    transform: translateZ(10px);
+    position: relative;
+    z-index: 5;
+  }
+  
+  /* Custom 3D column perspective */
+  .column-3d-container {
+    perspective: 2000px;
+    transform-style: preserve-3d;
+  }
+  
+  .column-3d {
+    transform: rotateX(5deg);
+    transform-style: preserve-3d;
+    transition: transform 0.5s ease;
+  }
+  
+  .column-3d:hover {
+    transform: rotateX(0deg);
+  }
+  
+  /* Create a subtle parallax scrolling effect */
+  .parallax-container {
+    overflow-y: auto;
+    perspective: 1px;
+    height: 100%;
+    overflow-x: hidden;
+  }
+  
+  .parallax-layer {
+    position: relative;
+    height: 100%;
+    transform-style: preserve-3d;
+  }
+  
+  .parallax-layer-back {
+    transform: translateZ(-1px) scale(2);
+  }
+  
+  .parallax-layer-base {
+    transform: translateZ(0);
+  }

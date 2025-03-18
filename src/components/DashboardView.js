@@ -1,5 +1,6 @@
-// src/components/DashboardView.js
+// Updated src/components/DashboardView.js with HabitTracker
 import React, { useState, useEffect } from 'react';
+import HabitTracker from './HabitTracker';
 
 const DashboardView = ({ 
   groups, 
@@ -21,6 +22,7 @@ const DashboardView = ({
   
   const [selectedTimeRange, setSelectedTimeRange] = useState('all');
   const [selectedGroup, setSelectedGroup] = useState(currentGroupId || 'all');
+  const [habitTimeRange, setHabitTimeRange] = useState('year'); 
   
   useEffect(() => {
     calculateStats();
@@ -235,6 +237,34 @@ const DashboardView = ({
             <span className="ml-2 text-sm text-gray-400">tasks</span>
           </div>
         </div>
+      </div>
+      
+      {/* Habit Tracker */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-medium text-white">Habit Tracker</h3>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-400">Time Period:</span>
+            <select
+              value={habitTimeRange}
+              onChange={(e) => setHabitTimeRange(e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-md text-gray-300 text-sm px-3 py-1 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="year">Past Year</option>
+              <option value="month6">Past 6 Months</option>
+              <option value="month3">Past 3 Months</option>
+              <option value="month">Past Month</option>
+            </select>
+          </div>
+        </div>
+        
+        <HabitTracker 
+          groups={groups} 
+          getBoards={getBoards} 
+          getColumns={getColumns} 
+          getTasks={getTasks}
+          selectedTimeRange={habitTimeRange}
+        />
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -11,10 +11,9 @@ const groupsMap = ydoc.getMap('groups');
 const boardsMap = ydoc.getMap('boards');
 const columnsMap = ydoc.getMap('columns');
 const tasksMap = ydoc.getMap('tasks');
+const workspaceItemsMap = ydoc.getMap('workspaceItems');
 
-/**
- * Initialize the store with default data if empty
- */
+
 export const initializeStore = () => {
   return new Promise((resolve) => {
     persistence.on('synced', () => {
@@ -42,7 +41,6 @@ export const initializeStore = () => {
           columnIds: []
         };
         
-        // Add default columns
         const todoColumnId = uuidv4();
         const todoColumn = {
           id: todoColumnId,
@@ -70,11 +68,9 @@ export const initializeStore = () => {
           order: 2
         };
         
-        // Update the references
         defaultGroup.boardIds = [defaultBoardId];
         defaultBoard.columnIds = [todoColumnId, inProgressColumnId, doneColumnId];
         
-        // Save all entities
         groupsMap.set(defaultGroupId, defaultGroup);
         boardsMap.set(defaultBoardId, defaultBoard);
         columnsMap.set(todoColumnId, todoColumn);
@@ -103,9 +99,56 @@ export const initializeStore = () => {
   });
 };
 
-/**
- * Group CRUD operations
- */
+
+const WorkspaceItemTypes = {
+  NOTE: 'note',
+  LINK: 'link',
+  CHECKLIST: 'checklist',
+  FILE_REFERENCE: 'file'
+};
+
+export const createWorkspaceItem = (boardId, type, content, metadata = {}) => {
+  const id = uuidv4();
+  const item = {
+    id,
+    type,
+    content,
+    metadata,
+    boardId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  
+  workspaceItemsMap.set(id, item);
+  return id;
+};
+
+export const getWorkspaceItems = (boardId) => {
+  return Array.from(workspaceItemsMap.values())
+    .filter(item => item.boardId === boardId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+};
+
+export const updateWorkspaceItem = (id, updates) => {
+  const item = workspaceItemsMap.get(id);
+  if (!item) return false;
+  
+  const updatedItem = { 
+    ...item, 
+    ...updates,
+    updatedAt: new Date().toISOString()
+  };
+  workspaceItemsMap.set(id, updatedItem);
+  return true;
+};
+
+export const deleteWorkspaceItem = (id) => {
+  if (!workspaceItemsMap.get(id)) return false;
+  workspaceItemsMap.delete(id);
+  return true;
+};
+
+
 export const createGroup = (name, description = '') => {
   const id = uuidv4();
   const group = {
@@ -153,9 +196,7 @@ export const deleteGroup = (id) => {
   return true;
 };
 
-/**
- * Board CRUD operations
- */
+
 export const createBoard = (groupId, name, description = '') => {
   const group = groupsMap.get(groupId);
   if (!group) return null;
@@ -254,9 +295,7 @@ export const deleteBoard = (id) => {
   return true;
 };
 
-/**
- * Column CRUD operations
- */
+
 export const createColumn = (boardId, name) => {
   const board = boardsMap.get(boardId);
   if (!board) return null;
@@ -330,22 +369,46 @@ export const createTask = (columnId, content, details = {}) => {
   if (!column) return null;
   
   const id = uuidv4();
+  const columnName = column ? column.name.trim().toLowerCase() : '';
+  const isInDone = columnName === 'done' || columnName === 'completed' || columnName === 'finished';
+  const isInProgress = columnName === 'in progress' || columnName === 'doing' || columnName === 'working' || columnName === 'started';
+  const isInTodo = columnName === 'to do' || columnName === 'todo' || columnName === 'backlog' || columnName === 'planned';
+  
+  const columnStatus = isInDone ? 'done' : 
+                      isInProgress ? 'in-progress' : 
+                      isInTodo ? 'todo' : 'other';
+  
+  let initialPercentComplete = details.percentComplete || 0;
+  let initialCompleted = details.completed || false;
+  
+  if (isInDone) {
+    initialPercentComplete = 100;
+    initialCompleted = true;
+  } else if (isInProgress && initialPercentComplete === 0) {
+    initialPercentComplete = 5;
+  }
+
   const task = {
     id,
     content,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     columnId,
+    columnStatus,  
     dueDate: details.dueDate || null,
     priority: details.priority || 'medium', // low, medium, high
     labels: details.labels || [],
     assignedTo: details.assignedTo || null,
     description: details.description || '',
     attachments: details.attachments || [],
-    completed: false,
+    completed: initialCompleted,
+    percentComplete: initialPercentComplete,
     estimatedTime: details.estimatedTime || null,
     actualTime: details.actualTime || null,
-    comments: []
+    comments: [],
+    movementHistory: [], 
+    timeInColumns: {},
+    lastColumnChange: new Date().toISOString(), 
   };
   
   tasksMap.set(id, task);
@@ -399,9 +462,7 @@ export const deleteTask = (id) => {
   return true;
 };
 
-/**
- * Task movement operations
- */
+
 export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceIndex, destinationIndex) => {
   const task = tasksMap.get(taskId);
   const sourceColumn = columnsMap.get(sourceColumnId);
@@ -416,17 +477,194 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
   const updatedDestinationColumn = { ...destinationColumn };
   
   updatedSourceColumn.taskIds = updatedSourceColumn.taskIds.filter(id => id !== taskId);
-  
   updatedDestinationColumn.taskIds = [...updatedDestinationColumn.taskIds];
   updatedDestinationColumn.taskIds.splice(destinationIndex, 0, taskId);
   
-  const updatedTask = { ...task, columnId: destinationColumnId };
+  const now = new Date().toISOString();
+  const updatedTask = { 
+    ...task, 
+    columnId: destinationColumnId,
+    updatedAt: now
+  };
+  
+  const destColumnName = destinationColumn.name.trim().toLowerCase();
+  const isMovingToDone = destColumnName === 'done' || destColumnName === 'completed' || destColumnName === 'finished';
+  const isMovingToInProgress = destColumnName === 'in progress' || destColumnName === 'doing' || destColumnName === 'working' || destColumnName === 'started';
+  const isMovingToTodo = destColumnName === 'to do' || destColumnName === 'todo' || destColumnName === 'backlog' || destColumnName === 'planned';
+  
+  updatedTask.columnStatus = isMovingToDone ? 'done' : 
+                             isMovingToInProgress ? 'in-progress' : 
+                             isMovingToTodo ? 'todo' : 'other';
+  
+  if (isMovingToDone) {
+    updatedTask.completed = true;
+    updatedTask.percentComplete = 100;
+  } else if (isMovingToInProgress && (!updatedTask.percentComplete || updatedTask.percentComplete === 0)) {
+    updatedTask.percentComplete = 5; 
+    updatedTask.completed = false;
+  } else if (isMovingToTodo) {
+    updatedTask.percentComplete = 0;
+    updatedTask.completed = false;
+  }
+  
+  if (sourceColumnId !== destinationColumnId) {
+    const timeInColumns = { ...updatedTask.timeInColumns } || {};
+    const lastColumnChange = new Date(updatedTask.lastColumnChange || updatedTask.createdAt);
+    const timeSpentMs = new Date(now) - lastColumnChange;
+    
+    timeInColumns[sourceColumnId] = (timeInColumns[sourceColumnId] || 0) + timeSpentMs;
+    updatedTask.timeInColumns = timeInColumns;
+    updatedTask.lastColumnChange = now;
+  }
   
   columnsMap.set(sourceColumnId, updatedSourceColumn);
   columnsMap.set(destinationColumnId, updatedDestinationColumn);
   tasksMap.set(taskId, updatedTask);
   
+  console.log(`Task ${taskId} moved to "${destinationColumn.name}", completed = ${updatedTask.completed}, percentComplete = ${updatedTask.percentComplete}`);
+  
   return true;
+};
+
+export const getColumnName = (columnId) => {
+  const column = columnsMap.get(columnId);
+  return column ? column.name : null;
+};
+
+export const addTaskComment = (taskId, comment, author) => {
+  const task = tasksMap.get(taskId);
+  if (!task) return false;
+  
+  const updatedTask = { ...task };
+  
+  if (!updatedTask.comments) {
+    updatedTask.comments = [];
+  }
+  
+  updatedTask.comments.push({
+    id: uuidv4(),
+    content: comment,
+    author: author,
+    createdAt: new Date().toISOString()
+  });
+  
+  updatedTask.updatedAt = new Date().toISOString();
+  tasksMap.set(taskId, updatedTask);
+  
+  return true;
+};
+
+export const getTaskAnalytics = (taskId) => {
+  const task = tasksMap.get(taskId);
+  if (!task) return null;
+  
+  const totalTimeMs = Object.values(task.timeInColumns || {}).reduce((sum, time) => sum + time, 0);
+  
+  const startDate = new Date(task.createdAt);
+  const endDate = task.completed 
+    ? new Date(task.updatedAt)
+    : new Date();
+  const cycleTimeMs = endDate - startDate;
+  
+  const columnTimes = {};
+  const timeInColumns = task.timeInColumns || {};
+  
+  Object.entries(timeInColumns).forEach(([columnId, timeMs]) => {
+    const columnName = getColumnName(columnId) || columnId;
+    columnTimes[columnName] = timeMs;
+  });
+  
+  const currentColumn = columnsMap.get(task.columnId);
+  const currentStatus = currentColumn ? currentColumn.name : 'Unknown';
+  
+  return {
+    totalTimeMs,
+    totalTimeDays: totalTimeMs / (1000 * 60 * 60 * 24),
+    cycleTimeMs,
+    cycleTimeDays: cycleTimeMs / (1000 * 60 * 60 * 24),
+    columnTimes,
+    transitions: task.movementHistory ? task.movementHistory.length : 0,
+    currentStatus,
+    completed: task.completed,
+    priority: task.priority
+  };
+};
+
+export const getBoardAnalytics = (boardId) => {
+  const board = boardsMap.get(boardId);
+  if (!board) return null;
+  
+  const columns = board.columnIds
+    ? board.columnIds.map(id => columnsMap.get(id)).filter(Boolean)
+    : [];
+  
+  const tasks = [];
+  columns.forEach(column => {
+    const columnTasks = column.taskIds
+      ? column.taskIds.map(id => tasksMap.get(id)).filter(Boolean)
+      : [];
+    
+    tasks.push(...columnTasks.map(task => ({
+      ...task,
+      columnName: column.name
+    })));
+  });
+  
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter(task => task.completed).length;
+  const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  
+  const tasksByPriority = {
+    high: tasks.filter(task => task.priority === 'high').length,
+    medium: tasks.filter(task => task.priority === 'medium').length,
+    low: tasks.filter(task => task.priority === 'low').length
+  };
+  
+  const tasksByColumn = {};
+  columns.forEach(column => {
+    tasksByColumn[column.name] = column.taskIds ? column.taskIds.length : 0;
+  });
+  
+  const tasksWithDueDate = tasks.filter(task => task.dueDate).length;
+  const tasksWithoutDueDate = totalTasks - tasksWithDueDate;
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const overdueTasks = tasks.filter(task => {
+    if (!task.dueDate || task.completed) return false;
+    
+    const dueDate = new Date(task.dueDate);
+    dueDate.setHours(0, 0, 0, 0);
+    return dueDate < today;
+  }).length;
+  
+  const completedTasksWithDates = tasks.filter(task => 
+    task.completed && task.createdAt && task.updatedAt
+  );
+  
+  let avgCycleTimeMs = 0;
+  if (completedTasksWithDates.length > 0) {
+    const totalCycleTimeMs = completedTasksWithDates.reduce((sum, task) => {
+      const startDate = new Date(task.createdAt);
+      const endDate = new Date(task.updatedAt);
+      return sum + (endDate - startDate);
+    }, 0);
+    
+    avgCycleTimeMs = totalCycleTimeMs / completedTasksWithDates.length;
+  }
+  
+  return {
+    totalTasks,
+    completedTasks,
+    completionRate,
+    tasksByPriority,
+    tasksByColumn,
+    tasksWithDueDate,
+    tasksWithoutDueDate,
+    overdueTasks,
+    avgCycleTimeMs,
+    avgCycleTimeDays: avgCycleTimeMs / (1000 * 60 * 60 * 24)
+  };
 };
 
 /**

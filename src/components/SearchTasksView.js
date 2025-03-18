@@ -22,12 +22,10 @@ const SearchTasksView = ({
   const [availableLabels, setAvailableLabels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Collect all tasks and available labels on component mount
   useEffect(() => {
     collectTasksAndLabels();
   }, [groups]);
   
-  // Gather all tasks from all groups, boards, columns
   const collectTasksAndLabels = () => {
     setIsLoading(true);
     
@@ -44,12 +42,10 @@ const SearchTasksView = ({
           const tasks = getTasks(column.id);
           
           tasks.forEach(task => {
-            // Collect labels
             if (task.labels && Array.isArray(task.labels)) {
               task.labels.forEach(label => labelsSet.add(label));
             }
             
-            // Add task with contextual information
             allTasks.push({
               ...task,
               groupId: group.id,
@@ -70,24 +66,20 @@ const SearchTasksView = ({
     setIsLoading(false);
   };
   
-  // Handle search input changes
   const handleSearch = (term) => {
     setSearchTerm(term);
     applySearchAndFilters(term, filters);
   };
   
-  // Handle filter changes
   const handleFilter = (newFilters) => {
     setFilters(newFilters);
     applySearchAndFilters(searchTerm, newFilters);
   };
   
-  // Apply both search term and filters
   const applySearchAndFilters = (term, appliedFilters) => {
     const lowerCaseTerm = term.toLowerCase();
     
     const filtered = searchResults.filter(task => {
-      // Text search
       const matchesSearch = 
         !term || 
         task.content.toLowerCase().includes(lowerCaseTerm) || 
@@ -95,12 +87,10 @@ const SearchTasksView = ({
       
       if (!matchesSearch) return false;
       
-      // Priority filter
       if (appliedFilters.priority !== 'all' && task.priority !== appliedFilters.priority) {
         return false;
       }
       
-      // Completion status filter
       if (appliedFilters.completed === 'completed' && !task.completed) {
         return false;
       }
@@ -108,7 +98,6 @@ const SearchTasksView = ({
         return false;
       }
       
-      // Due date filter
       if (appliedFilters.dueDate !== 'any' && task.dueDate) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -146,13 +135,11 @@ const SearchTasksView = ({
         return false;
       }
       
-      // Labels filter
       if (appliedFilters.labels.length > 0) {
         if (!task.labels || !Array.isArray(task.labels)) {
           return false;
         }
         
-        // Check if task has at least one of the selected labels
         const hasMatchingLabel = appliedFilters.labels.some(label => 
           task.labels.includes(label)
         );
@@ -168,14 +155,12 @@ const SearchTasksView = ({
     setFilteredResults(filtered);
   };
   
-  // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return null;
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
   
-  // Check if a task is overdue
   const isOverdue = (dateString) => {
     if (!dateString) return false;
     const today = new Date();
@@ -185,7 +170,6 @@ const SearchTasksView = ({
     return dueDate < today;
   };
   
-  // Get task priority styling
   const getPriorityClasses = (priority) => {
     switch(priority) {
       case 'high': return 'border-red-500';
@@ -197,13 +181,12 @@ const SearchTasksView = ({
   
   return (
     <div className="p-6 h-full overflow-y-auto">
-      {/* Header */}
       <div className="flex items-center mb-6 pb-4 border-b border-gray-800">
         <button 
           className="flex items-center mr-4 px-3 py-1.5 text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50"
           onClick={onBack}
         >
-          <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg className="w-4 h-4 mr-1 z-20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M15 19L8 12L15 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           Back
@@ -211,7 +194,6 @@ const SearchTasksView = ({
         <h2 className="text-xl font-bold text-white">Search Tasks</h2>
       </div>
       
-      {/* Search and filter bar */}
       <div className="mb-6">
         <SearchAndFilterBar 
           onSearch={handleSearch}
@@ -221,7 +203,6 @@ const SearchTasksView = ({
         />
       </div>
       
-      {/* Search results */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
         <div className="px-4 py-3 bg-gray-900 border-b border-gray-700 flex justify-between items-center">
           <h3 className="text-white font-medium">
@@ -233,7 +214,6 @@ const SearchTasksView = ({
           </div>
         </div>
         
-        {/* Results list */}
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
             <div className="w-8 h-8 border-2 border-t-indigo-500 border-gray-600 rounded-full animate-spin"></div>
@@ -283,17 +263,14 @@ const SearchTasksView = ({
                         </h4>
                       </div>
                       
-                      {/* Task details */}
                       <div className="mt-2 text-xs text-gray-400 pl-6">
                         <div className="flex flex-wrap items-center gap-2">
-                          {/* Location info */}
                           <div className="flex items-center">
                             <span className="bg-gray-700 px-2 py-0.5 rounded">
                               {task.boardName} / {task.columnName}
                             </span>
                           </div>
                           
-                          {/* Due date */}
                           {task.dueDate && (
                             <div className={`flex items-center gap-1 ${isOverdue(task.dueDate) && !task.completed ? 'text-red-400' : ''}`}>
                               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -303,7 +280,6 @@ const SearchTasksView = ({
                             </div>
                           )}
                           
-                          {/* Priority */}
                           <div className="flex items-center gap-1">
                             <span className={`w-2 h-2 rounded-full ${
                               task.priority === 'high' ? 'bg-red-500' : 
@@ -325,7 +301,6 @@ const SearchTasksView = ({
                           </div>
                         )}
                         
-                        {/* Description preview */}
                         {task.description && (
                           <div className="mt-2 text-gray-500 line-clamp-1">
                             {task.description}

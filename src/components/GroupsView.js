@@ -1,10 +1,12 @@
 // src/components/GroupsView.js
 import React, { useState } from 'react';
 
-const GroupsView = ({ groups, onSelectGroup, onCreateGroup }) => {
+const GroupsView = ({ groups, onSelectGroup, onCreateGroup, onDeleteGroup }) => {
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDescription, setNewGroupDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [groupToDelete, setGroupToDelete] = useState(null);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   
   const handleCreateGroup = () => {
     if (newGroupName.trim()) {
@@ -25,6 +27,25 @@ const GroupsView = ({ groups, onSelectGroup, onCreateGroup }) => {
       setNewGroupDescription('');
     }
   };
+
+  const handleDeleteClick = (e, group) => {
+    e.stopPropagation();
+    setGroupToDelete(group);
+    setShowDeleteConfirmation(true);
+  };
+  
+  const confirmDelete = () => {
+    if (groupToDelete) {
+      onDeleteGroup(groupToDelete.id);
+      setShowDeleteConfirmation(false);
+      setGroupToDelete(null);
+    }
+  };
+  
+  const cancelDelete = () => {
+    setShowDeleteConfirmation(false);
+    setGroupToDelete(null);
+  };
   
   return (
     <div className="p-6 h-full overflow-y-auto">
@@ -38,9 +59,20 @@ const GroupsView = ({ groups, onSelectGroup, onCreateGroup }) => {
         {groups.map(group => (
           <div
             key={group.id}
-            className="bg-gray-800 rounded-lg border border-gray-700 hover:border-indigo-500 p-5 cursor-pointer shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
+            className="bg-gray-800 rounded-lg border border-gray-700 hover:border-indigo-500 p-5 cursor-pointer shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-200 relative group task-card"
             onClick={() => onSelectGroup(group.id)}
           >
+            {/* Add Delete Button */}
+            <button
+              className="absolute top-2 right-2 p-1 rounded-full bg-gray-700 hover:bg-red-600 text-gray-400 hover:text-white transition-colors"
+              onClick={(e) => handleDeleteClick(e, group)}
+              title="Delete workspace"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </button>
+
             <h3 className="text-lg font-semibold text-white mb-2">{group.name}</h3>
             
             {group.description && (
@@ -85,7 +117,7 @@ const GroupsView = ({ groups, onSelectGroup, onCreateGroup }) => {
               onChange={(e) => setNewGroupName(e.target.value)}
               placeholder="Workspace name"
               onKeyDown={handleKeyDown}
-              className="w-full mb-3 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-2"
               autoFocus
             />
             
@@ -94,19 +126,19 @@ const GroupsView = ({ groups, onSelectGroup, onCreateGroup }) => {
               onChange={(e) => setNewGroupDescription(e.target.value)}
               placeholder="Description (optional)"
               rows="2"
-              className="w-full mb-4 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
             />
             
             <div className="flex justify-end gap-2">
               <button 
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors btn-neon btn-neon-primary"
                 onClick={handleCreateGroup}
               >
                 Create
               </button>
               
               <button 
-                className="px-4 py-2 bg-gray-700 text-gray-300 rounded-md hover:bg-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors text-sm"
                 onClick={() => {
                   setIsCreating(false);
                   setNewGroupName('');
@@ -119,6 +151,37 @@ const GroupsView = ({ groups, onSelectGroup, onCreateGroup }) => {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmation && groupToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
+          <div className="bg-gray-850 w-full max-w-md rounded-lg shadow-2xl border border-gray-700 p-6">
+            <h3 className="text-white font-medium text-lg mb-3">Delete Workspace</h3>
+            
+            <p className="text-gray-300 mb-6">
+              Are you sure you want to delete <span className="font-semibold text-white">{groupToDelete.name}</span>? 
+              This will also delete all boards and tasks within this workspace.
+              This action cannot be undone.
+            </p>
+            
+            <div className="flex justify-end gap-3">
+              <button 
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors"
+                onClick={cancelDelete}
+              >
+                Cancel
+              </button>
+              
+              <button 
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition-colors"
+                onClick={confirmDelete}
+              >
+                Delete Workspace
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

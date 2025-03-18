@@ -21,7 +21,6 @@ const SearchAndFilterBar = ({
   const searchInputRef = useRef(null);
   const dropdownRef = useRef(null);
   
-  // Handle outside clicks to close the dropdown
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -35,14 +34,12 @@ const SearchAndFilterBar = ({
     };
   }, []);
   
-  // Handle search changes
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchText(value);
     onSearch(value);
   };
   
-  // Handle filter changes
   const handleFilterChange = (filterType, value) => {
     const newFilters = {
       ...filters,
@@ -52,7 +49,6 @@ const SearchAndFilterBar = ({
     onFilter(newFilters);
   };
   
-  // Handle label selection
   const handleLabelToggle = (label) => {
     const newLabels = filters.labels.includes(label)
       ? filters.labels.filter(l => l !== label)
@@ -61,7 +57,6 @@ const SearchAndFilterBar = ({
     handleFilterChange('labels', newLabels);
   };
   
-  // Handle keyboard shortcut for search (Ctrl+K or Cmd+K)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -76,7 +71,6 @@ const SearchAndFilterBar = ({
     };
   }, []);
   
-  // Clear all filters
   const handleClearFilters = () => {
     const resetFilters = {
       priority: 'all',
@@ -90,7 +84,6 @@ const SearchAndFilterBar = ({
   
   return (
     <div className="w-full flex flex-col space-y-2">
-      {/* Search bar */}
       <div className="w-full flex items-center relative">
         <div className="relative flex-grow">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -101,7 +94,7 @@ const SearchAndFilterBar = ({
           <input
             type="text"
             ref={searchInputRef}
-            className="block w-full pl-10 pr-10 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-300 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="block w-full pl-10 pr-10 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-300 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 z-20"
             placeholder="Search tasks... (Ctrl+K)"
             value={searchText}
             onChange={handleSearchChange}
@@ -121,7 +114,6 @@ const SearchAndFilterBar = ({
           )}
         </div>
         
-        {/* Advanced filter button */}
         {showAdvancedFilters && (
           <div className="relative ml-2" ref={dropdownRef}>
             <button
@@ -140,7 +132,6 @@ const SearchAndFilterBar = ({
               </svg>
             </button>
             
-            {/* Advanced filters dropdown */}
             {isAdvancedOpen && (
               <div className="absolute right-0 mt-2 z-10 w-64 bg-gray-800 border border-gray-700 rounded-md shadow-lg">
                 <div className="p-3">
@@ -154,7 +145,6 @@ const SearchAndFilterBar = ({
                     </button>
                   </div>
                   
-                  {/* Priority filter */}
                   <div className="mb-3">
                     <label className="block text-gray-400 text-sm mb-1">Priority</label>
                     <div className="flex space-x-1">
@@ -201,7 +191,6 @@ const SearchAndFilterBar = ({
                     </div>
                   </div>
                   
-                  {/* Completion Status filter */}
                   <div className="mb-3">
                     <label className="block text-gray-400 text-sm mb-1">Status</label>
                     <div className="flex space-x-1">
@@ -238,7 +227,6 @@ const SearchAndFilterBar = ({
                     </div>
                   </div>
                   
-                  {/* Due Date filter */}
                   <div className="mb-3">
                     <label className="block text-gray-400 text-sm mb-1">Due Date</label>
                     <div className="flex flex-wrap gap-1">
@@ -295,7 +283,6 @@ const SearchAndFilterBar = ({
                     </div>
                   </div>
                   
-                  {/* Labels filter */}
                   {availableLabels.length > 0 && (
                     <div className="mb-3">
                       <label className="block text-gray-400 text-sm mb-1">Labels</label>
@@ -323,7 +310,6 @@ const SearchAndFilterBar = ({
         )}
       </div>
       
-      {/* Active filters display */}
       {showAdvancedFilters && (
         <div className="flex flex-wrap gap-1 items-center text-xs">
           {filters.priority !== 'all' && (

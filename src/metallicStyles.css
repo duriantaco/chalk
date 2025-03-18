@@ -1,0 +1,324 @@
+
+/* src/metallicStyles.css */
+/* Metallic backgrounds and effects */
+
+:root {
+  --neon-primary: #8b5cf6;    /* Purple */
+  --neon-secondary: #6366f1;  /* Indigo */
+  --neon-accent: #ec4899;     /* Pink */
+}
+
+.bg-metallic-gradient {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .bg-metallic-gradient::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+      radial-gradient(circle at 15% 50%, rgba(109, 40, 217, 0.15) 0%, transparent 45%),
+      radial-gradient(circle at 85% 30%, rgba(249, 115, 22, 0.1) 0%, transparent 40%);
+    z-index: -1;
+  }
+  
+  .bg-metallic-gradient::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z' fill='%236366f1' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.3;
+  }
+  
+  /* Metallic workspace cards */
+  .card-metallic {
+    background: linear-gradient(145deg, #1f2937 0%, #111827 100%);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .card-metallic::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      130deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0.05) 10%,
+      rgba(255, 255, 255, 0) 50%
+    );
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  
+  .card-metallic:hover::before {
+    opacity: 1;
+  }
+  
+  .card-metallic::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(109, 40, 217, 0.1) 100%
+    );
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  
+  .card-metallic:hover::after {
+    opacity: 1;
+  }
+  
+  .card-metallic:hover {
+    transform: translateY(-8px);
+    box-shadow: 
+      0 10px 20px rgba(0, 0, 0, 0.3),
+      0 0 15px rgba(109, 40, 217, 0.5);
+    border-color: rgba(109, 40, 217, 0.4);
+  }
+  
+  .card-metallic-content {
+    position: relative;
+    z-index: 2;
+  }
+  
+  /* Neon borders for workspace cards */
+  .neon-border-effect {
+    position: relative;
+    border-radius: 0.5rem;
+  }
+  
+  .neon-border-effect::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    border-radius: inherit;
+    background: linear-gradient(
+      135deg,
+      var(--neon-primary) 0%,
+      transparent 40%,
+      transparent 60%,
+      var(--neon-accent) 100%
+    );
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  
+  .neon-border-effect:hover::after {
+    opacity: 1;
+  }
+  
+  .header-metallic {
+    background: linear-gradient(to right, #0f172a, #1e293b);
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+  }
+  
+  .header-metallic::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: 
+      linear-gradient(90deg, rgba(99, 102, 241, 0.05) 0%, transparent 100%),
+      linear-gradient(180deg, rgba(109, 40, 217, 0.1) 0%, transparent 100%);
+    z-index: 0;
+  }
+  
+  .title-neon {
+    background: linear-gradient(
+      90deg,
+      var(--neon-primary) 0%,
+      var(--neon-secondary) 50%,
+      var(--neon-accent) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    position: relative;
+    display: inline-block;
+  }
+  
+  .title-neon::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    filter: blur(8px);
+    opacity: 0.7;
+    background: inherit;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Metallic buttons */
+  .btn-metallic {
+    background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%);
+    position: relative;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(147, 51, 234, 0.5);
+  }
+  
+  .btn-metallic::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.15) 0%,
+      transparent 50%,
+      rgba(0, 0, 0, 0.15) 100%
+    );
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: inherit;
+  }
+  
+  .btn-metallic:hover::before {
+    opacity: 1;
+  }
+  
+  .btn-metallic:hover {
+    box-shadow: 0 0 15px rgba(109, 40, 217, 0.5);
+    transform: translateY(-2px);
+  }
+  
+  .accent-line {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent 0%,
+      rgba(109, 40, 217, 0.7) 50%,
+      transparent 100%
+    );
+  }
+  
+  @keyframes ambient-shift {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+  
+  .ambient-bg {
+    background: linear-gradient(
+      -45deg,
+      rgba(15, 23, 42, 1) 0%,
+      rgba(30, 41, 59, 1) 25%,
+      rgba(30, 41, 59, 1) 75%,
+      rgba(15, 23, 42, 1) 100%
+    );
+    background-size: 400% 400%;
+    animation: ambient-shift 15s ease infinite;
+    position: relative;
+  }
+  
+  .btn-glow-outline {
+    position: relative;
+    overflow: hidden;
+    z-index: 1;
+    transition: all 0.3s ease;
+  }
+  
+  .btn-glow-outline::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(
+      135deg,
+      var(--neon-primary) 0%,
+      var(--neon-accent) 100%
+    );
+    /* -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.5;
+    transition: opacity 0.3s ease;*/
+  }
+  
+  .btn-glow-outline:hover::before {
+    opacity: 1;
+  }
+  
+  .grid-neon {
+    position: relative;
+    z-index: 1;
+  }
+  
+  .grid-neon::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: 
+      linear-gradient(to right, transparent 99%, rgba(109, 40, 217, 0.1) 100%),
+      linear-gradient(to bottom, transparent 99%, rgba(109, 40, 217, 0.1) 100%);
+    background-size: 40px 40px;
+    z-index: -1;
+    opacity: 0.3;
+  }
+  
+  .counter-neon {
+    background: linear-gradient(
+      90deg,
+      var(--neon-secondary) 0%,
+      var(--neon-primary) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+    font-weight: bold;
+    font-size: 1.5rem;
+    text-shadow: 0 0 5px rgba(139, 92, 246, 0.5);
+    position: relative;
+  }
+  
+  .counter-neon::after {
+    content: attr(data-count);
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    filter: blur(8px);
+    opacity: 0.7;
+    background: inherit;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
