@@ -130,10 +130,8 @@
   }
   
   .header-metallic {
-    background: linear-gradient(to right, #0f172a, #1e293b);
     position: relative;
-    overflow: hidden;
-    border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+    transition: all 0.3s ease;
   }
   
   .header-metallic::before {

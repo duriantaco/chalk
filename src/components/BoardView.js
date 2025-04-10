@@ -1,649 +1,898 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import TaskDetailView from './TaskDetailView';
-import SearchAndFilterBar from './SearchAndFilterBar';
-import EnhancedTaskCard from './EnhancedTaskCard';
-import WorkspacePanel from './WorkspacePanel';
-import CalendarView from './calendar/CalendarView';
-import DocumentationSystem from './DocumentationSystem';
+import React, { useState, useEffect, useRef, memo } from 'react';
+import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { restrictToParentElement } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
+import { DndContext, DragOverlay, useSensors, useSensor, PointerSensor, KeyboardSensor, useDroppable, pointerWithin } from '@dnd-kit/core';
 
-const BoardView = ({ 
-  board, 
-  columns, 
-  getTasks, 
-  onCreateColumn, 
-  onCreateTask, 
-  onMoveTask,
-  onUpdateTask,
-  onDeleteTask,
-  onBack,
-  workspaceItems = [],
-  onCreateWorkspaceItem,
-  onUpdateWorkspaceItem,
-  onDeleteWorkspaceItem
-}) => {
-  const [newColumnName, setNewColumnName] = useState('');
-  const [isAddingColumn, setIsAddingColumn] = useState(false);
-  const [newTaskContents, setNewTaskContents] = useState({});
-  const [expandedTaskInputs, setExpandedTaskInputs] = useState({});
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showDocumentation, setShowDocumentation] = useState(false);
-  const [filters, setFilters] = useState({
-    priority: 'all',
-    completed: 'all',
-    dueDate: 'any',
-    labels: []
-  });
-  const [isWorkspacePanelVisible, setIsWorkspacePanelVisible] = useState(false);
-  
-  const [viewMode, setViewMode] = useState('kanban'); // 'kanban' or 'calendar'
-  
-  const newColumnInputRef = useRef(null);
-  
-  const availableLabels = useMemo(() => {
-    const labelsSet = new Set();
-    
-    columns.forEach(column => {
-      const tasks = getTasks(column.id);
-      tasks.forEach(task => {
-        if (task.labels && Array.isArray(task.labels)) {
-          task.labels.forEach(label => labelsSet.add(label));
-        }
-      });
-    });
-    
-    return Array.from(labelsSet);
-  }, [columns, getTasks]);
-  
-  const applySearchAndFilters = useCallback((task, term, appliedFilters) => {
-    if (term) {
-      const lowerCaseTerm = term.toLowerCase();
-      if (!task.content.toLowerCase().includes(lowerCaseTerm) && 
-          !(task.description && task.description.toLowerCase().includes(lowerCaseTerm))) {
-        return false;
-      }
-    }
-    
-    if (appliedFilters.priority !== 'all' && task.priority !== appliedFilters.priority) {
-      return false;
-    }
-    
-    if (appliedFilters.completed === 'completed' && !task.completed) {
-      return false;
-    } else if (appliedFilters.completed === 'active' && task.completed) {
-      return false;
-    }
-    
-    if (appliedFilters.dueDate !== 'any') {
-      if (!task.dueDate) return false;
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dueDate = new Date(task.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
-      
-      if (appliedFilters.dueDate === 'overdue') {
-        return dueDate < today && !task.completed;
-      }
-      
-      if (appliedFilters.dueDate === 'today') {
-        return dueDate.getTime() === today.getTime();
-      }
-      
-      if (appliedFilters.dueDate === 'week') {
-        const weekFromNow = new Date();
-        weekFromNow.setDate(today.getDate() + 7);
-        return dueDate >= today && dueDate <= weekFromNow;
-      }
-      
-      if (appliedFilters.dueDate === 'month') {
-        const monthFromNow = new Date();
-        monthFromNow.setMonth(today.getMonth() + 1);
-        return dueDate >= today && dueDate <= monthFromNow;
-      }
-    }
-    
-    if (appliedFilters.labels.length > 0) {
-      if (!task.labels || !Array.isArray(task.labels)) return false;
-      return appliedFilters.labels.some(label => task.labels.includes(label));
-    }
-    
-    return true;
-  }, []);
-  
-  useEffect(() => {
-    if (isAddingColumn && newColumnInputRef.current) {
-      newColumnInputRef.current.focus();
-    }
-  }, [isAddingColumn]);
-  
-  const handleCreateColumn = useCallback(() => {
-    if (newColumnName.trim()) {
-      onCreateColumn(newColumnName.trim());
-      setNewColumnName('');
-      setIsAddingColumn(false);
-    }
-  }, [newColumnName, onCreateColumn]);
-  
-  const handleCreateTask = useCallback((columnId, content, details = {}) => {
-    if (!content) {
-      content = newTaskContents[columnId];
-    }
-    
-    if (content && content.trim()) {
-      onCreateTask(columnId, content.trim(), details);
-      setNewTaskContents(prev => ({
-        ...prev,
-        [columnId]: ''
-      }));
-      setExpandedTaskInputs(prev => ({
-        ...prev,
-        [columnId]: false
-      }));
-    }
-  }, [newTaskContents, onCreateTask]);
-  
-  const handleDragEnd = useCallback((result) => {
-    const { source, destination, draggableId } = result;
-    
-    if (!destination) return;
-    
-    if (
-      source.droppableId === destination.droppableId &&
-      source.index === destination.index
-    ) return;
-    
-    onMoveTask(draggableId, source.droppableId, destination.droppableId, source.index, destination.index);
-  }, [onMoveTask]);
+const TaskCard = memo(({ task, onClick, isDragging = false }) => {
+  const priorityColors = {
+    high: 'border-red-500',
+    medium: 'border-amber-500',
+    low: 'border-emerald-500',
+    normal: 'border-transparent'
+  };
 
-  const toggleTaskInput = useCallback((columnId) => {
-    setExpandedTaskInputs(prev => {
-      const newState = {
-        ...prev,
-        [columnId]: !prev[columnId]
-      };
-      
-      if (!newState[columnId]) return newState;
-      
-      setNewTaskContents(prevContents => ({
-        ...prevContents,
-        [columnId]: prevContents[columnId] || ''
-      }));
-      
-      return newState;
-    });
-  }, []);
-  
-  const handleKeyDown = useCallback((e, columnId) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleCreateTask(columnId);
-    } else if (e.key === 'Escape') {
-      setNewTaskContents(prev => ({
-        ...prev,
-        [columnId]: ''
-      }));
-      setExpandedTaskInputs(prev => ({
-        ...prev,
-        [columnId]: false
-      }));
-    }
-  }, [handleCreateTask]);
-  
-  const handleColumnKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') {
-      handleCreateColumn();
-    } else if (e.key === 'Escape') {
-      setIsAddingColumn(false);
-      setNewColumnName('');
-    }
-  }, [handleCreateColumn]);
-  
-  const handleSearch = useCallback((term) => {
-    setSearchTerm(term);
-  }, []);
-  
-  const handleFilter = useCallback((newFilters) => {
-    setFilters(newFilters);
-  }, []);
-
-  const toggleWorkspacePanel = useCallback(() => {
-    setIsWorkspacePanelVisible(prev => !prev);
-  }, []);
-  
-  const getFilteredTasks = useMemo(() => {
-    return (columnId) => {
-      let tasks = getTasks(columnId);
-      
-      if (!searchTerm && filters.priority === 'all' && filters.completed === 'all' && 
-          filters.dueDate === 'any' && filters.labels.length === 0) {
-        return tasks;
-      }
-      
-      return tasks.filter(task => applySearchAndFilters(task, searchTerm, filters));
-    };
-  }, [getTasks, searchTerm, filters, applySearchAndFilters]);
-  
-  const formatDate = useCallback((dateString) => {
+  const formatDate = (dateString) => {
     if (!dateString) return null;
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }, []);
+  };
 
-  const isOverdue = useCallback((dateString) => {
+  const isOverdue = (dateString) => {
     if (!dateString) return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const dueDate = new Date(dateString);
     dueDate.setHours(0, 0, 0, 0);
-    return dueDate < today;
-  }, []);
-  
-  const getPriorityClasses = useCallback((priority) => {
-    switch(priority) {
-      case 'high': return 'border-red-500 neon-border-high neon-pulse';
-      case 'medium': return 'border-amber-500 neon-border-medium';
-      case 'low': return 'border-emerald-500 neon-border-low';
-      default: return 'border-transparent';
-    }
-  }, []);
-  
-  const hasActiveFilters = useMemo(() => 
-    searchTerm.trim() !== '' || 
-    filters.priority !== 'all' || 
-    filters.completed !== 'all' || 
-    filters.dueDate !== 'any' || 
-    filters.labels.length > 0
-  , [searchTerm, filters]);
-  
-  const totalTasks = useMemo(() => 
-    columns.reduce((count, column) => count + getTasks(column.id).length, 0)
-  , [columns, getTasks]);
-  
-  const filteredTasksCount = useMemo(() => 
-    columns.reduce((count, column) => count + getFilteredTasks(column.id).length, 0)
-  , [columns, getFilteredTasks]);
-  
-  const handleTaskClick = useCallback((taskId) => {
-    setSelectedTaskId(taskId);
-  }, []);
-  
-  const selectedTask = useMemo(() => {
-    if (!selectedTaskId) return null;
-    
-    for (const column of columns) {
-      const tasks = getTasks(column.id);
-      const task = tasks.find(t => t.id === selectedTaskId);
-      if (task) return task;
-    }
-    return null;
-  }, [columns, getTasks, selectedTaskId]);
-  
-  const handleClearFilters = useCallback(() => {
-    setSearchTerm('');
-    setFilters({
-      priority: 'all',
-      completed: 'all',
-      dueDate: 'any',
-      labels: []
-    });
-  }, []);
-  
-  const toggleViewMode = useCallback((mode) => {
-    setViewMode(mode);
-  }, []);
-  
-  const toggleDocumentation = useCallback(() => {
-    setShowDocumentation(prev => !prev);
-  }, []);
-  
-  const handleCloseTaskDetail = useCallback(() => {
-    setSelectedTaskId(null);
-  }, []);
-  
+    return dueDate < today && !task.completed;
+  };
+
+  const priorityColor = priorityColors[task.priority || 'normal'];
+  const percentComplete = task.percentComplete || 0;
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center px-6 py-4 border-b border-gray-800">
-        <button 
-          className="p-2 mr-4 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors focus:outline-none"
-          onClick={onBack}
+    <div
+      className={`bg-gray-900 rounded-md border-l-4 ${priorityColor} ${
+        task.completed ? 'opacity-60' : ''} ${
+        isDragging ? 'shadow-lg scale-105' : ''} transition-all duration-200 cursor-grab px-3 py-3 w-full`}
+      onClick={onClick}
+      data-task-id={task.id}
+    >
+      <div className="flex flex-col">
+        <div className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-white'}`}>
+          {task.content}
+        </div>
+
+        {task.columnStatus === 'in-progress' && percentComplete > 0 && (
+          <div className="mt-2">
+            <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${percentComplete === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                style={{ width: `${percentComplete}%` }}
+              ></div>
+            </div>
+            <div className="text-xs text-gray-400 mt-1 text-right">
+              {percentComplete}%
+            </div>
+          </div>
+        )}
+
+        {task.labels && task.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {task.labels.slice(0, 3).map((label, index) => (
+              <span key={index} className="text-xs px-2 py-0.5 rounded-full bg-indigo-900 bg-opacity-40 text-indigo-300">
+                {label}
+              </span>
+            ))}
+            {task.labels.length > 3 &&
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">
+                +{task.labels.length - 3}
+              </span>
+            }
+          </div>
+        )}
+
+        <div className="flex items-center text-xs text-gray-500 mt-2 gap-2">
+          {task.dueDate && (
+            <div className={`flex items-center gap-1 ${isOverdue(task.dueDate) ? 'text-red-400' : ''}`}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 2V6M16 2V6M3 10H21M5 4H19C20.1046 4 21 4.89543 21 6V20C21 21.1046 20.1046 22 19 22H5C3.89543 22 3 21.1046 3 20V6C3 4.89543 3.89543 4 5 4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>{formatDate(task.dueDate)}</span>
+            </div>
+          )}
+
+          {task.assignedTo && (
+            <div className="flex items-center">
+              <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-xs text-white font-semibold">
+                {task.assignedTo.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
+
+          {task.completed && (
+            <div className="ml-auto flex items-center text-emerald-500">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="ml-1">Done</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const SortableTaskCard = memo(({ task, onClick }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: task.id,
+    data: {
+      type: 'task',
+      task
+    }
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 250ms ease',
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 999 : 'auto',
+    display: 'block',
+    marginBottom: '12px',
+    position: 'relative'
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="touch-none w-full"
+      {...attributes}
+      {...listeners}
+    >
+      <TaskCard
+        task={task}
+        onClick={onClick}
+        isDragging={isDragging}
+      />
+    </div>
+  );
+});
+
+const Column = memo(({ column, tasks, onTaskClick, onAddTask }) => {
+  const [isAddingTask, setIsAddingTask] = useState(false);
+  const [newTaskContent, setNewTaskContent] = useState('');
+  const inputRef = useRef(null);
+
+  const { setNodeRef: setDroppableNodeRef } = useDroppable({
+    id: column.id,
+    data: {
+      type: 'column',
+      column
+    }
+  });
+
+  useEffect(() => {
+    if (isAddingTask && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isAddingTask]);
+
+  const handleAddClick = () => {
+    setIsAddingTask(true);
+  };
+
+  const handleCreateTask = () => {
+    if (newTaskContent.trim()) {
+      onAddTask(column.id, newTaskContent);
+      setNewTaskContent('');
+      setIsAddingTask(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setNewTaskContent('');
+    setIsAddingTask(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCreateTask();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
+  const taskIds = tasks.map(t => t.id);
+
+  return (
+    <div
+      ref={setDroppableNodeRef}
+      className="flex flex-col min-w-[300px] w-[300px] flex-shrink-0 bg-gray-800 rounded-lg border border-gray-700 shadow-lg overflow-hidden h-full"
+      data-column-id={column.id}
+    >
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 flex-shrink-0">
+        <div className="flex items-center space-x-2">
+          <span className="font-medium text-white">{column.name}</span>
+          <span className="text-xs px-2 py-1 rounded-full bg-gray-700 text-gray-300">
+            {tasks.length}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2">
+        <SortableContext
+          id={column.id}
+          items={taskIds}
+          strategy={verticalListSortingStrategy}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        <h2 className="text-xl font-bold text-white">{board.name}</h2>
-        
-        <div className="ml-6 flex bg-gray-800 rounded-md overflow-hidden">
-          <button 
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              viewMode === 'kanban' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-            onClick={() => toggleViewMode('kanban')}
+          {tasks.map((task) => (
+            <SortableTaskCard
+              key={task.id}
+              task={task}
+              onClick={() => onTaskClick(task.id)}
+            />
+          ))}
+        </SortableContext>
+
+        {tasks.length === 0 && !isAddingTask && (
+          <div className="flex items-center justify-center h-24 border border-dashed border-gray-700 rounded-md m-1">
+            <p className="text-gray-500 text-sm">Drop tasks here</p>
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 border-t border-gray-700 flex-shrink-0">
+        {!isAddingTask ? (
+          <button
+            className="w-full flex items-center justify-center gap-2 text-gray-400 hover:text-white py-2 px-3 bg-gray-700 bg-opacity-50 hover:bg-opacity-70 rounded-md transition-colors"
+            onClick={handleAddClick}
           >
-            <div className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-              <span>Kanban</span>
-            </div>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span>Add task</span>
           </button>
-          <button 
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              viewMode === 'calendar' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-            onClick={() => toggleViewMode('calendar')}
-          >
-            <div className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-              </svg>
-              <span>Calendar</span>
+        ) : (
+          <div className="p-3 bg-gray-900 rounded-md border border-gray-700">
+            <textarea
+              ref={inputRef}
+              value={newTaskContent}
+              onChange={(e) => setNewTaskContent(e.target.value)}
+              placeholder="What needs to be done?"
+              onKeyDown={handleKeyDown}
+              rows="3"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none transition-colors"
+                onClick={handleCreateTask}
+                disabled={!newTaskContent.trim()}
+              >
+                Add
+              </button>
+              <button
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
+                onClick={handleCancel}
+              >
+                Cancel
+              </button>
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const TaskDetailModal = ({ task, onClose, onUpdate, onDelete }) => {
+  const [editedTask, setEditedTask] = useState({ ...task });
+
+  useEffect(() => {
+    setEditedTask({ ...task });
+  }, [task]);
+
+  const handleChange = (field, value) => {
+    setEditedTask(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSave = () => {
+    onUpdate(editedTask);
+    onClose();
+  };
+
+  const handleDelete = () => {
+    if (window.confirm("Are you sure you want to delete this task?")) {
+      onDelete(task.id);
+      onClose();
+    }
+  };
+
+  if (!task) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm">
+      <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-white">Task Details</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
         </div>
 
-        <button 
-            className={`ml-4 px-3 py-1.5 text-sm rounded-md focus:outline-none transition-colors ${
-              showDocumentation 
-                ? 'bg-indigo-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            onClick={toggleDocumentation}
-            title={showDocumentation ? "Hide Docs" : "Show Docs"}
-          >
-            <div className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-              </svg>
-              <span>Documentation</span>
-            </div>
-          </button>
-        
-          <button 
-            className={`ml-2 sm:ml-4 p-2 sm:px-3 sm:py-1.5 text-sm rounded-md focus:outline-none transition-colors ${
-              isWorkspacePanelVisible 
-                ? 'bg-indigo-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            onClick={toggleWorkspacePanel}
-            title={isWorkspacePanelVisible ? "Hide Workspace" : "Show Workspace"}
-          >
-            <div className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-              <span className="hidden sm:inline">Workspace</span>
-            </div>
-          </button>
-      </div>
-      
-      {board.description && (
-        <div className="px-6 py-2 text-gray-400 text-sm">
-          <p>{board.description}</p>
-        </div>
-      )}
-      
-      <div className="px-6 py-3 border-b border-gray-800">
-        <SearchAndFilterBar 
-          onSearch={handleSearch} 
-          onFilter={handleFilter}
-          availableLabels={availableLabels}
-          showAdvancedFilters={true}
-        />
-        
-        {hasActiveFilters && (
-          <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
-            <span>
-              Showing {filteredTasksCount} of {totalTasks} tasks
-            </span>
-            
-            <button 
-              className="text-indigo-400 hover:text-indigo-300"
-              onClick={handleClearFilters}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Title</label>
+            <textarea
+              value={editedTask.content}
+              onChange={(e) => handleChange('content', e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+              rows="2"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Description</label>
+            <textarea
+              value={editedTask.description || ''}
+              onChange={(e) => handleChange('description', e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+              rows="3"
+              placeholder="Add a more detailed description..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Priority</label>
+            <select
+              value={editedTask.priority || 'normal'}
+              onChange={(e) => handleChange('priority', e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
-              Clear filters
-            </button>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
           </div>
-        )}
-      </div>
-      
-      <div className="flex flex-1 overflow-hidden">
-        {showDocumentation ? (
-          <div className="flex-1 overflow-auto p-4">
-            <DocumentationSystem
-              workspaceItems={workspaceItems}
-              tasks={columns.reduce((allTasks, column) => [...allTasks, ...getTasks(column.id)], [])}
-              onCreateDocument={(type, content, metadata) => onCreateWorkspaceItem(type, content, {
-                ...metadata, 
-                boardId: board.id
-              })}
-              onUpdateDocument={onUpdateWorkspaceItem}
-              onLinkTaskToDocument={(docId, taskId) => {
-                const task = columns.reduce((foundTask, column) => {
-                  if (foundTask) return foundTask;
-                  const columnTasks = getTasks(column.id);
-                  return columnTasks.find(t => t.id === taskId) || null;
-                }, null);
-                
-                if (!task) return;
-                
-                const doc = workspaceItems.find(item => item.id === docId);
-                if (!doc) return;
-                
-                const linkedDocs = task.linkedDocuments || [];
-                if (!linkedDocs.includes(docId)) {
-                  onUpdateTask(taskId, {
-                    linkedDocuments: [...linkedDocs, docId]
-                  });
-                }
-                
-                const linkedTasks = doc.linkedTasks || [];
-                if (!linkedTasks.includes(taskId)) {
-                  onUpdateWorkspaceItem(docId, {
-                    linkedTasks: [...linkedTasks, taskId]
-                  });
-                }
-              }}
-              currentBoardId={board.id}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Due Date</label>
+            <input
+              type="date"
+              value={editedTask.dueDate || ''}
+              onChange={(e) => handleChange('dueDate', e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
-        ) : viewMode === 'kanban' ? (
-          <DragDropContext onDragEnd={handleDragEnd}>
-            <div className={`flex-1 overflow-x-auto p-4 ${isWorkspacePanelVisible ? 'pr-0' : ''}`}>
-              <div className="flex h-full">
-                {columns.map(column => {
-                  const tasks = hasActiveFilters ? getFilteredTasks(column.id) : getTasks(column.id);
-                  const isTaskInputExpanded = expandedTaskInputs[column.id];
-                  
-                  return (
-                      <div key={column.id} className="flex flex-col min-w-[280px] w-[300px] md:w-[280px] lg:w-[300px] flex-shrink-0 mr-4 bg-gray-800 rounded-lg border border-gray-700 shadow-lg">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-white">{column.name}</span>
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-700 text-gray-300">
-                            {tasks.length}
-                          </span>
-                        </div>
-                        <div className="text-gray-500">
-                        </div>
-                      </div>
-                      
-                      <Droppable droppableId={column.id}>
-                        {(provided, snapshot) => (
-                          <div
-                            className={`flex-1 overflow-y-auto p-2 ${snapshot.isDraggingOver ? 'bg-gray-700 bg-opacity-30' : ''} transition-colors duration-200`}
-                            {...provided.droppableProps}
-                            ref={provided.innerRef}
-                          >
-                            {tasks.length === 0 && !snapshot.isDraggingOver && (
-                              <div className="flex items-center justify-center h-24 border border-dashed border-gray-700 rounded-md m-1">
-                                <p className="text-gray-500 text-sm">{
-                                  hasActiveFilters ? 'No matching tasks' : 'No tasks yet'
-                                }</p>
-                              </div>
-                            )}
-                            
-                            {tasks.map((task, index) => (
-                              <Draggable
-                                key={task.id}
-                                draggableId={task.id}
-                                index={index}
-                              >
-                                {(provided, snapshot) => (
-                                  <EnhancedTaskCard
-                                    task={task}
-                                    index={index}
-                                    provided={provided}
-                                    snapshot={snapshot}
-                                    onClick={(e) => {
-                                      if (!e.defaultPrevented) {
-                                        setSelectedTaskId(task.id);
-                                      }
-                                    }}
-                                    getPriorityClasses={getPriorityClasses}
-                                    formatDate={formatDate}
-                                    isOverdue={isOverdue}
-                                  />
-                                )}
-                              </Draggable>
-                            ))}
-                            {provided.placeholder}
-                          </div>
-                        )}
-                      </Droppable>
-                      
-                      <div className="p-3 border-t border-gray-700">
-                        {!isTaskInputExpanded ? (
-                          <button 
-                            className="w-full flex items-center justify-center gap-2 text-gray-400 hover:text-white py-2 px-3 bg-gray-700 bg-opacity-50 hover:bg-opacity-70 rounded-md transition-colors btn-neon"
-                            onClick={() => toggleTaskInput(column.id)}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                            <span>Add task</span>
-                          </button>
-                        ) : (
-                          <div className="p-3 bg-gray-900 rounded-md border border-gray-700">
-                            <textarea
-                              value={newTaskContents[column.id] || ''}
-                              onChange={(e) => setNewTaskContents({
-                                ...newTaskContents,
-                                [column.id]: e.target.value
-                              })}
-                              placeholder="What needs to be done?"
-                              onKeyDown={(e) => handleKeyDown(e, column.id)}
-                              rows="3"
-                              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                              autoFocus
-                            />
-                            <div className="flex justify-end gap-2">
-                              <button
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors btn-neon btn-neon-primary"
-                                onClick={() => handleCreateTask(column.id)}
-                                disabled={!newTaskContents[column.id] || !newTaskContents[column.id].trim()}
-                              >
-                                Add
-                              </button>
-                              <button
-                                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
-                                onClick={() => toggleTaskInput(column.id)}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {!isAddingColumn ? (
-                  <div className="min-w-[280px] w-[300px] md:w-[280px] lg:w-[300px] flex-shrink-0">
-                    <button 
-                      className="w-full h-12 flex items-center justify-center gap-2 text-gray-400 hover:text-white bg-gray-800 bg-opacity-30 hover:bg-opacity-50 border border-gray-700 border-dashed rounded-lg transition-colors"
-                      onClick={() => setIsAddingColumn(true)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                      <span>Add Column</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="min-w-[280px] w-[300px] md:w-[280px] lg:w-[300px] flex-shrink-0 p-4 bg-gray-800 rounded-lg border border-gray-700 shadow-lg">
-                    <input
-                      type="text"
-                      value={newColumnName}
-                      onChange={(e) => setNewColumnName(e.target.value)}
-                      placeholder="Column name"
-                      onKeyDown={handleColumnKeyDown}
-                      ref={newColumnInputRef}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button 
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors"
-                        onClick={handleCreateColumn}
-                        disabled={!newColumnName.trim()}
-                      >
-                        Add
-                      </button>
-                      <button 
-                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
-                        onClick={() => {
-                          setIsAddingColumn(false);
-                          setNewColumnName('');
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+
+          {editedTask.columnStatus === 'in-progress' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Progress ({editedTask.percentComplete || 0}%)</label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value={editedTask.percentComplete || 0}
+                onChange={(e) => handleChange('percentComplete', parseInt(e.target.value))}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              />
             </div>
-          </DragDropContext>
-        ) : (
-          <div className={`flex-1 overflow-hidden ${isWorkspacePanelVisible ? 'pr-0' : ''}`}>
-            <CalendarView
-              columns={columns}
-              getTasks={getTasks}
-              searchTerm={searchTerm}
-              filters={filters}
-              applySearchAndFilters={applySearchAndFilters}
-              onCreateTask={handleCreateTask}
-              onTaskClick={handleTaskClick}
+          )}
+
+          <div className="flex items-center">
+            <label className="flex items-center text-sm font-medium text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editedTask.completed || false}
+                onChange={(e) => handleChange('completed', e.target.checked)}
+                className="mr-2 h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-700 cursor-pointer"
+              />
+              Mark as completed
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Assigned To</label>
+            <input
+              type="text"
+              value={editedTask.assignedTo || ''}
+              onChange={(e) => handleChange('assignedTo', e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              placeholder="Enter name"
             />
           </div>
-        )}
-        
-        {isWorkspacePanelVisible && (
-            <div className="w-full md:w-80 md:min-w-80 h-full border-t md:border-t-0 md:border-l border-gray-700">
-            <WorkspacePanel
-              board={board}
-              workspaceItems={workspaceItems}
-              onCreateItem={onCreateWorkspaceItem}
-              onUpdateItem={onUpdateWorkspaceItem}
-              onDeleteItem={onDeleteWorkspaceItem}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Labels (comma-separated)</label>
+            <input
+              type="text"
+              value={editedTask.labels?.join(', ') || ''}
+              onChange={(e) => handleChange('labels', e.target.value.split(',').map(l => l.trim()).filter(l => l))}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              placeholder="e.g., Frontend, Bug"
             />
           </div>
-        )}
+
+          <div className="flex justify-between pt-4 border-t border-gray-700">
+            <button
+              onClick={handleDelete}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md focus:outline-none transition-colors"
+            >
+              Delete Task
+            </button>
+
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-      
-      {selectedTaskId && (
-        <TaskDetailView
-          task={selectedTask}
-          onClose={handleCloseTaskDetail}
-          onUpdate={onUpdateTask}
-          onDelete={onDeleteTask}
-        />
-      )}
     </div>
   );
 };
 
-export default React.memo(BoardView);
+const AddColumn = ({ onAddColumn }) => {
+  const [isAdding, setIsAdding] = useState(false);
+  const [columnName, setColumnName] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isAdding && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isAdding]);
+
+  const handleAddClick = () => {
+    setIsAdding(true);
+  };
+
+  const handleSave = () => {
+    if (columnName.trim()) {
+      onAddColumn(columnName);
+      setColumnName('');
+      setIsAdding(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setColumnName('');
+    setIsAdding(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
+  return (
+    <div className="min-w-[300px] w-[300px] flex-shrink-0 h-full flex flex-col">
+      {!isAdding ? (
+        <button
+          className="w-full h-12 flex items-center justify-center gap-2 text-gray-400 hover:text-white bg-gray-800 bg-opacity-30 hover:bg-opacity-50 border border-gray-700 border-dashed rounded-lg transition-colors mt-0"
+          onClick={handleAddClick}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span>Add Column</span>
+        </button>
+      ) : (
+        <div className="p-4 bg-gray-800 rounded-lg border border-gray-700 shadow-lg">
+          <input
+            ref={inputRef}
+            type="text"
+            value={columnName}
+            onChange={(e) => setColumnName(e.target.value)}
+            placeholder="Column name"
+            onKeyDown={handleKeyDown}
+            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-3"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none transition-colors"
+              onClick={handleSave}
+              disabled={!columnName.trim()}
+            >
+              Add
+            </button>
+            <button
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
+              onClick={handleCancel}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="flex-grow"></div>
+    </div>
+  );
+};
+
+const KanbanBoard = () => {
+  const [columns, setColumns] = useState([
+    { id: 'todo', name: 'To Do' },
+    { id: 'in-progress', name: 'In Progress' },
+    { id: 'done', name: 'Done' }
+  ]);
+
+  const [tasks, setTasks] = useState({
+    'todo': [
+      {
+        id: 'task-1',
+        content: 'Research competing products',
+        priority: 'high',
+        columnStatus: 'todo',
+        dueDate: '2025-04-15',
+        labels: ['Research'],
+        description: 'Analyze features, pricing, and UX of top 3 competitors.'
+      },
+      {
+        id: 'task-2',
+        content: 'Create initial mockups',
+        priority: 'medium',
+        columnStatus: 'todo',
+        labels: ['Design', 'UX'],
+        assignedTo: 'Alex'
+      }
+    ],
+    'in-progress': [
+      {
+        id: 'task-3',
+        content: 'Implement drag and drop functionality',
+        priority: 'medium',
+        columnStatus: 'in-progress',
+        percentComplete: 65,
+        labels: ['Frontend', 'React'],
+        assignedTo: 'Mike',
+        description: 'Use dnd-kit library for core functionality.'
+      }
+    ],
+    'done': [
+      {
+        id: 'task-4',
+        content: 'Set up project repository',
+        priority: 'low',
+        columnStatus: 'done',
+        completed: true,
+        labels: ['Setup'],
+        dueDate: '2024-07-01'
+      }
+    ]
+  });
+
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const getTaskById = (taskId) => {
+    for (const columnId in tasks) {
+      const task = tasks[columnId]?.find(t => t.id === taskId);
+      if (task) return task;
+    }
+    return null;
+  };
+
+  const handleDragStart = (event) => {
+    const { active } = event;
+    setActiveTaskId(active.id);
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    setActiveTaskId(null);
+    
+    if (!over || !active) return;
+    
+    const activeId = active.id;
+    const overId = over.id;
+    
+    if (activeId === overId) return;
+    
+    let sourceColumnId = null;
+    let sourceTask = null;
+    
+    for (const colId in tasks) {
+      const task = tasks[colId]?.find(t => t.id === activeId);
+      if (task) {
+        sourceColumnId = colId;
+        sourceTask = task;
+        break;
+      }
+    }
+    
+    if (!sourceColumnId || !sourceTask) return;
+    
+    let targetColumnId = null;
+    
+    if (columns.some(col => col.id === overId)) {
+      targetColumnId = overId;
+    } else {
+      for (const colId in tasks) {
+        if (tasks[colId]?.some(t => t.id === overId)) {
+          targetColumnId = colId;
+          break;
+        }
+      }
+    }
+    
+    if (!targetColumnId) return;
+    
+    setTasks(prevTasks => {
+      const newTasks = { ...prevTasks };
+      
+      newTasks[sourceColumnId] = prevTasks[sourceColumnId].filter(t => t.id !== activeId);
+      
+      const updatedTask = {
+        ...sourceTask,
+        columnStatus: targetColumnId,
+        completed: targetColumnId === 'done'
+      };
+      
+      if (!newTasks[targetColumnId]) {
+        newTasks[targetColumnId] = [];
+      }
+      
+      if (overId !== targetColumnId) {
+        const overTaskIndex = newTasks[targetColumnId].findIndex(t => t.id === overId);
+        if (overTaskIndex !== -1) {
+          const newColumnTasks = [...newTasks[targetColumnId]];
+          newColumnTasks.splice(overTaskIndex, 0, updatedTask);
+          newTasks[targetColumnId] = newColumnTasks;
+        } else {
+          newTasks[targetColumnId] = [...newTasks[targetColumnId], updatedTask];
+        }
+      } else {
+        newTasks[targetColumnId] = [...newTasks[targetColumnId], updatedTask];
+      }
+      
+      return newTasks;
+    });
+  };
+
+  const handleAddTask = (columnId, content) => {
+    setTasks(prev => {
+      const newTask = {
+        id: `task-${Date.now()}`,
+        content,
+        priority: 'normal',
+        columnStatus: columnId,
+        completed: columnId === 'done',
+        labels: [],
+        description: '',
+        dueDate: null,
+        assignedTo: null,
+        percentComplete: 0,
+      };
+
+      const columnTasks = prev[columnId] ? [...prev[columnId]] : [];
+      return {
+        ...prev,
+        [columnId]: [...columnTasks, newTask]
+      };
+    });
+  };
+
+  const handleAddColumn = (name) => {
+    const newId = `column-${Date.now()}`;
+
+    setColumns(prev => [...prev, { id: newId, name }]);
+    setTasks(prev => ({
+      ...prev,
+      [newId]: []
+    }));
+  };
+
+  const handleTaskClick = (taskId) => {
+    setSelectedTaskId(taskId);
+  };
+
+  const handleUpdateTask = (updatedTask) => {
+    setTasks(prev => {
+      const result = { ...prev };
+      let currentColumnId = null;
+      let taskIndex = -1;
+      let originalTask = null;
+
+      for (const colId in result) {
+         if (Array.isArray(result[colId])) {
+             const idx = result[colId].findIndex(t => t.id === updatedTask.id);
+             if (idx !== -1) {
+                 currentColumnId = colId;
+                 taskIndex = idx;
+                 originalTask = result[colId][idx];
+                 break;
+             }
+         }
+      }
+
+      if (!currentColumnId || !originalTask) {
+           return prev;
+      }
+
+      const finalTask = { ...originalTask, ...updatedTask };
+      const targetColStatus = finalTask.columnStatus || currentColumnId;
+
+      if (currentColumnId !== targetColStatus) {
+        result[currentColumnId].splice(taskIndex, 1);
+        finalTask.columnStatus = targetColStatus;
+        finalTask.completed = targetColStatus === 'done' ? true : finalTask.completed;
+
+        if (!result[targetColStatus]) {
+          result[targetColStatus] = [];
+        }
+        if (!Array.isArray(result[targetColStatus])) {
+            result[targetColStatus] = [];
+        }
+        result[targetColStatus].push(finalTask);
+      } else {
+        finalTask.columnStatus = currentColumnId;
+        finalTask.completed = currentColumnId === 'done' ? true : finalTask.completed;
+        if (Array.isArray(result[currentColumnId])) {
+            result[currentColumnId][taskIndex] = finalTask;
+        }
+      }
+
+      return result;
+    });
+  };
+
+  const handleDeleteTask = (taskId) => {
+    setTasks(prev => {
+      const result = { ...prev };
+      for (const columnId in result) {
+         if (Array.isArray(result[columnId])) {
+             result[columnId] = result[columnId].filter(t => t.id !== taskId);
+         }
+      }
+      return result;
+    });
+  };
+
+  const activeTask = activeTaskId ? getTaskById(activeTaskId) : null;
+  const selectedTask = selectedTaskId ? getTaskById(selectedTaskId) : null;
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
+      <header className="px-6 py-4 border-b border-gray-800 flex-shrink-0">
+        <h1 className="text-xl font-bold">Project Tasks</h1>
+      </header>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center flex-1">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex h-full space-x-4">
+              {columns.map(column => (
+                <Column
+                  key={column.id}
+                  column={column}
+                  tasks={tasks[column.id] || []}
+                  onTaskClick={handleTaskClick}
+                  onAddTask={handleAddTask}
+                />
+              ))}
+
+              <AddColumn onAddColumn={handleAddColumn} />
+
+              <DragOverlay>
+                {activeTask && (
+                  <div
+                    className="w-[300px]"
+                    style={{
+                      pointerEvents: 'none',
+                      transform: 'rotate(2deg)',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                    }}
+                  >
+                    <TaskCard task={activeTask} isDragging={true} />
+                  </div>
+                )}
+              </DragOverlay>
+            </div>
+          </DndContext>
+        </div>
+      )}
+
+      {selectedTaskId && selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdate={handleUpdateTask}
+          onDelete={handleDeleteTask}
+        />
+      )}
+
+      <style>{`
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: rgba(31, 41, 55, 0.5);
+          border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: rgba(79, 70, 229, 0.5);
+          border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(79, 70, 229, 0.7);
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 16px;
+          height: 16px;
+          background: #6366f1;
+          cursor: pointer;
+          border-radius: 50%;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          background: #6366f1;
+          cursor: pointer;
+          border-radius: 50%;
+          border: none;
+        }
+         .flex-1.overflow-x-auto.overflow-y-hidden {
+            padding-bottom: 16px;
+         }
+         .flex.h-full.space-x-4 {
+             height: calc(100% - 16px);
+         }
+         [data-task-id] {
+             transform-origin: 50% 50%;
+         }
+      `}</style>
+    </div>
+  );
+};
+
+export default KanbanBoard;

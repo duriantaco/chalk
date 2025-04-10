@@ -109,6 +109,7 @@ export const initializeStore = () => {
           console.log('Using existing data');
         }
         
+        runDataIntegrityCheck();
         resolve();
       } catch (error) {
         console.error('Error setting up initial data:', error);
@@ -447,7 +448,12 @@ export const createTask = (columnId, content, details = {}) => {
     return null;
   }
   
-  const id = uuidv4();
+  let id = uuidv4();
+  while (tasksMap.has(id)) {
+    console.warn('UUID collision detected, regenerating ID');
+    id = uuidv4();
+  }
+  
   const columnName = column.name.trim().toLowerCase();
   const isInDone = columnName === 'done' || columnName === 'completed' || columnName === 'finished';
   const isInProgress = columnName === 'in progress' || columnName === 'doing' || columnName === 'working' || columnName === 'started';
@@ -496,14 +502,23 @@ export const createTask = (columnId, content, details = {}) => {
   
   try {
     ydoc.transact(() => {
+      if (tasksMap.has(id)) {
+        throw new Error(`Task with ID ${id} already exists`);
+      }
+      
       tasksMap.set(id, task);
       
       const updatedColumn = { ...column };
       if (!updatedColumn.taskIds) {
         updatedColumn.taskIds = [];
       }
-      updatedColumn.taskIds.push(id);
-      columnsMap.set(columnId, updatedColumn);
+      
+      if (!updatedColumn.taskIds.includes(id)) {
+        updatedColumn.taskIds.push(id);
+        columnsMap.set(columnId, updatedColumn);
+      } else {
+        console.error(`Task ID ${id} already exists in column ${columnId}`);
+      }
     });
     
     return id;
@@ -519,18 +534,29 @@ export const getTasks = (columnId) => {
   
   if (column.taskIds.length === 0) return [];
   
+  const uniqueTaskIds = [...new Set(column.taskIds)];
+  if (uniqueTaskIds.length !== column.taskIds.length) {
+    console.warn(`Column ${columnId} has duplicate task IDs. Auto-fixing...`);
+    
+    ydoc.transact(() => {
+      const updatedColumn = { ...column, taskIds: uniqueTaskIds };
+      columnsMap.set(columnId, updatedColumn);
+    });
+  }
+  
   const result = [];
-  for (const taskId of column.taskIds) {
+  const foundIds = new Set();
+  
+  for (const taskId of uniqueTaskIds) {
     const task = tasksMap.get(taskId);
     if (task) {
-      result.push(task);
+      if (!foundIds.has(taskId)) {
+        result.push(task);
+        foundIds.add(taskId);
+      }
     } else {
       console.warn(`Task ID ${taskId} referenced in column ${columnId} but not found in tasks map`);
     }
-  }
-  
-  if (result.length !== column.taskIds.length) {
-    console.warn(`Column ${columnId} has ${column.taskIds.length} task IDs but only ${result.length} valid tasks were found`);
   }
   
   return result;
@@ -654,12 +680,23 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
     if (!sourceColumn.taskIds) sourceColumn.taskIds = [];
     if (!destinationColumn.taskIds) destinationColumn.taskIds = [];
     
-    const updatedSourceColumn = { ...sourceColumn };
-    const updatedDestinationColumn = { ...destinationColumn };
+    const updatedSourceColumn = { 
+      ...sourceColumn,
+      taskIds: [...sourceColumn.taskIds]
+    };
+    
+    const updatedDestinationColumn = {
+      ...destinationColumn,
+      taskIds: [...destinationColumn.taskIds]
+    };
     
     updatedSourceColumn.taskIds = updatedSourceColumn.taskIds.filter(id => id !== taskId);
     
-    updatedDestinationColumn.taskIds = [...updatedDestinationColumn.taskIds];
+    const existingIndex = updatedDestinationColumn.taskIds.indexOf(taskId);
+    if (existingIndex !== -1) {
+      console.warn(`Task ${taskId} already exists in destination column, removing duplicate reference`);
+      updatedDestinationColumn.taskIds.splice(existingIndex, 1);
+    }
     
     const safeDestinationIndex = Math.max(0, Math.min(destinationIndex, updatedDestinationColumn.taskIds.length));
     updatedDestinationColumn.taskIds.splice(safeDestinationIndex, 0, taskId);
@@ -677,8 +714,8 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
     const isMovingToTodo = destColumnName === 'to do' || destColumnName === 'todo' || destColumnName === 'backlog' || destColumnName === 'planned';
     
     updatedTask.columnStatus = isMovingToDone ? 'done' : 
-                               isMovingToInProgress ? 'in-progress' : 
-                               isMovingToTodo ? 'todo' : 'other';
+                              isMovingToInProgress ? 'in-progress' : 
+                              isMovingToTodo ? 'todo' : 'other';
     
     if (isMovingToDone) {
       updatedTask.completed = true;
@@ -714,6 +751,14 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
     
     try {
       ydoc.transact(() => {
+        if (!tasksMap.has(taskId)) {
+          throw new Error(`Cannot move task ${taskId} as it no longer exists`);
+        }
+        
+        if (!columnsMap.has(sourceColumnId) || !columnsMap.has(destinationColumnId)) {
+          throw new Error('Source or destination column no longer exists');
+        }
+        
         columnsMap.set(sourceColumnId, updatedSourceColumn);
         columnsMap.set(destinationColumnId, updatedDestinationColumn);
         tasksMap.set(taskId, updatedTask);
@@ -730,6 +775,7 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
     return false;
   }
 };
+
 
 export const getColumnName = (columnId) => {
   const column = columnsMap.get(columnId);
@@ -890,9 +936,69 @@ export const getBoardAnalytics = (boardId) => {
   };
 };
 
-/**
- * Subscribe to Y.js changes
- */
+export const runDataIntegrityCheck = () => {
+  console.log("Running data integrity check...");
+  let fixedIssues = 0;
+  
+  try {
+    const columns = Array.from(columnsMap.values());
+    
+    ydoc.transact(() => {
+      columns.forEach(column => {
+        if (!column.taskIds || !Array.isArray(column.taskIds)) {
+          console.warn(`Column ${column.id} has no taskIds array, fixing...`);
+          const updatedColumn = { ...column, taskIds: [] };
+          columnsMap.set(column.id, updatedColumn);
+          fixedIssues++;
+          return;
+        }
+        
+        const uniqueTaskIds = [...new Set(column.taskIds)];
+        if (uniqueTaskIds.length !== column.taskIds.length) {
+          console.warn(`Column ${column.id} has duplicate task IDs, fixing...`);
+          const updatedColumn = { ...column, taskIds: uniqueTaskIds };
+          columnsMap.set(column.id, updatedColumn);
+          fixedIssues++;
+        }
+        
+        const orphanedIds = column.taskIds.filter(taskId => !tasksMap.has(taskId));
+        if (orphanedIds.length > 0) {
+          console.warn(`Column ${column.id} has ${orphanedIds.length} orphaned task IDs, removing...`);
+          const updatedTaskIds = column.taskIds.filter(taskId => tasksMap.has(taskId));
+          const updatedColumn = { ...column, taskIds: updatedTaskIds };
+          columnsMap.set(column.id, updatedColumn);
+          fixedIssues++;
+        }
+      });
+      
+      const tasks = Array.from(tasksMap.values());
+      const columnTaskIds = new Set();
+      
+      columns.forEach(column => {
+        if (column.taskIds && Array.isArray(column.taskIds)) {
+          column.taskIds.forEach(taskId => columnTaskIds.add(taskId));
+        }
+      });
+      
+      const orphanedTasks = tasks.filter(task => !columnTaskIds.has(task.id));
+      if (orphanedTasks.length > 0) {
+        console.warn(`Found ${orphanedTasks.length} tasks not associated with any column`);
+        orphanedTasks.forEach(task => {
+          console.warn(`Removing orphaned task: ${task.id} - ${task.content}`);
+          tasksMap.delete(task.id);
+          fixedIssues++;
+        });
+      }
+    });
+    
+    console.log(`Data integrity check completed: ${fixedIssues} issues fixed`);
+    return fixedIssues;
+  } catch (error) {
+    console.error("Error during data integrity check:", error);
+    return -1;
+  }
+};
+
 export const subscribeToChanges = (callback) => {
   const observer = () => {
     callback();

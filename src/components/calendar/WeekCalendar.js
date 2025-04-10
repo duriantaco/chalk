@@ -11,7 +11,6 @@ const WeekCalendar = ({
   const { days } = weekData;
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Helper function to check if two dates are the same day
   const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
     return (
@@ -21,7 +20,6 @@ const WeekCalendar = ({
     );
   };
 
-  // Get the appropriate priority classes for styling
   const getPriorityClasses = (priority) => {
     switch(priority) {
       case 'high': return 'border-red-500';
@@ -33,7 +31,6 @@ const WeekCalendar = ({
 
   return (
     <div className="bg-gray-850 rounded-lg border border-gray-700 overflow-hidden">
-      {/* Week Header */}
       <div className="grid grid-cols-7 bg-gray-800 border-b border-gray-700">
         {days.map((day, i) => (
           <div key={i} className={`py-2 text-center ${day.isToday ? 'bg-indigo-900/30' : ''}`}>

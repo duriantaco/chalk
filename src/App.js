@@ -33,7 +33,7 @@ import Sidebar from './components/Sidebar';
 import SettingsView from './components/SettingsView';
 import PasswordDialog from './components/PasswordDialog';
 import { isAppUnlocked } from './utils/passwordManager';
-import { initializeTheme, applyTheme, THEMES } from './utils/themeManager';
+import { initializeTheme, applyTheme, THEMES, setupThemeObserver } from './utils/themeManager';
 import BacklogView from './components/BacklogView';
 import { setupStaleTaskScheduler } from './utils/backlogManager';
 
@@ -72,6 +72,8 @@ const App = () => {
         const savedTheme = initializeTheme();
         setCurrentTheme(savedTheme);
         
+        const observer = setupThemeObserver();
+
         refreshGroups();
   
         try {
@@ -112,6 +114,7 @@ const App = () => {
         return () => {
           unsubscribe();
           cancelScheduler();
+          observer.disconnect();
         };
       } catch (error) {
         console.error('Error initializing store:', error);
@@ -128,20 +131,69 @@ const App = () => {
     init();
   }, [backlogSchedulerActive]);
 
-  const handleThemeChange = (theme) => {
-    setCurrentTheme(theme);
-    applyTheme(theme);
-  };
+  useEffect(() => {
+    if (isLoaded && currentTheme) {
+      applyTheme(currentTheme);
+    }
+  }, [isLoaded, currentTheme]);
 
-  const handleUnlock = () => {
-    setAppLocked(false);
-  };
-  
+  useEffect(() => {
+    if (isLoaded) {
+      setTimeout(() => {
+        console.log("Applying global theme fix...");
+        
+        document.querySelectorAll('.bg-gray-800, .bg-gray-850, .bg-gray-900, .workspace-card, .card-metallic')
+          .forEach(el => {
+            el.classList.add('theme-card');
+          });
+          
+        document.querySelectorAll('.w-10.h-screen, .w-12.h-screen')
+          .forEach(el => {
+            el.classList.add('theme-sidebar');
+          });
+          
+        document.querySelectorAll('input, textarea, select')
+          .forEach(el => {
+            el.classList.add('theme-input');
+          });
+          
+        document.querySelectorAll('.bg-indigo-600')
+          .forEach(el => {
+            el.classList.add('theme-button-primary');
+          });
+          
+        document.querySelectorAll('.text-white, .text-gray-300')
+          .forEach(el => {
+            el.classList.add('theme-text-primary');
+          });
+          
+        document.querySelectorAll('.text-gray-400, .text-gray-500')
+          .forEach(el => {
+            el.classList.add('theme-text-secondary');
+          });
+      }, 100); 
+    }
+  }, [isLoaded, currentTheme]);
+
   useEffect(() => {
     if (achievements.length > 0) {
       localStorage.setItem('chalk-achievements', JSON.stringify(achievements));
     }
   }, [achievements]);
+
+  const handleThemeChange = (theme) => {
+    document.documentElement.classList.add('theme-transitioning');
+
+    setCurrentTheme(theme);
+    applyTheme(theme);
+    setTimeout(() => {
+      document.documentElement.classList.remove('theme-transitioning');
+    }, 300);
+  };
+
+  const handleUnlock = () => {
+    setAppLocked(false);
+  };
 
   const refreshGroups = () => {
     setGroups(getGroups());
@@ -422,8 +474,7 @@ const App = () => {
 
   return (
     <div 
-      className="min-h-screen flex"
-      style={{ backgroundColor: 'var(--bg-primary)' }}
+      className={`min-h-screen flex app-container ${currentTheme}`}
     >
       {appLocked ? (
         <PasswordDialog onSuccess={handleUnlock} />

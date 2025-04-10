@@ -13,7 +13,7 @@ const Sidebar = ({
   onShowSearch,
   onShowGraph,
   onShowSettings,
-  onShowBacklog  // Added this missing prop
+  onShowBacklog
 }) => {
   const [newGroupName, setNewGroupName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -63,7 +63,7 @@ const Sidebar = ({
   
   return (
     <div className="flex h-screen relative z-10">
-      <div className="w-10 sm:w-12 h-screen bg-gray-900 flex flex-col items-center py-3">
+      <div className="w-10 sm:w-12 h-screen bg-gray-900 flex flex-col items-center py-3 theme-sidebar">
         <div className="mb-6 text-xl font-bold">
           <span className="bg-gradient-to-r from-purple-400 to-indigo-500 text-transparent bg-clip-text">C</span>
         </div>

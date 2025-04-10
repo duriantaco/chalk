@@ -52,17 +52,14 @@ const BacklogView = ({
           const tasks = getTasks(column.id);
           
           tasks.forEach(task => {
-            // Collect all available labels
             if (task.labels && Array.isArray(task.labels)) {
               task.labels.forEach(label => allLabels.add(label));
             }
             
-            // Check if task is stale (not updated in a week & not completed)
             const isStale = !task.completed && 
                             new Date(task.updatedAt || task.createdAt) < oneWeekAgo &&
                             !isBacklogColumn;
             
-            // Add task to appropriate collection with additional metadata
             const enrichedTask = {
               ...task,
               groupId: group.id,
@@ -100,7 +97,6 @@ const BacklogView = ({
   };
 
   const applySearchAndFilters = (task) => {
-    // Search term filter
     if (searchTerm) {
       const lowerCaseTerm = searchTerm.toLowerCase();
       if (!task.content.toLowerCase().includes(lowerCaseTerm) && 
@@ -109,19 +105,16 @@ const BacklogView = ({
       }
     }
     
-    // Priority filter
     if (filters.priority !== 'all' && task.priority !== filters.priority) {
       return false;
     }
     
-    // Completed status filter
     if (filters.completed === 'completed' && !task.completed) {
       return false;
     } else if (filters.completed === 'active' && task.completed) {
       return false;
     }
     
-    // Due date filter
     if (filters.dueDate !== 'any' && task.dueDate) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -151,7 +144,6 @@ const BacklogView = ({
       return false;
     }
     
-    // Labels filter
     if (filters.labels.length > 0) {
       if (!task.labels || !Array.isArray(task.labels)) {
         return false;
@@ -197,23 +189,18 @@ const BacklogView = ({
   };
 
   const moveToBacklog = async (task) => {
-    // Find or create a backlog column in the current board
     const board = getBoards(task.groupId).find(b => b.id === task.boardId);
     const columns = getColumns(board.id);
     
     let backlogColumn = columns.find(col => col.name.toLowerCase().includes('backlog'));
     
-    // If no backlog column exists, we'll use the first column
     const targetColumnId = backlogColumn ? backlogColumn.id : columns[0].id;
     
-    // Get current column's tasks for index calculation
     const sourceTasks = getTasks(task.columnId);
     const sourceIndex = sourceTasks.findIndex(t => t.id === task.id);
     
-    // Get target column's tasks
     const targetTasks = getTasks(targetColumnId);
     
-    // Move the task to the end of backlog column
     onMoveTask(
       task.id, 
       task.columnId, 
@@ -222,15 +209,12 @@ const BacklogView = ({
       targetTasks.length
     );
     
-    // Refresh the task lists after moving
     setTimeout(collectTasks, 500);
   };
 
   const moveFromBacklog = (task) => {
-    // Get all columns for the board
     const columns = getColumns(task.boardId);
     
-    // Find the "Todo" column or the first non-backlog column
     let todoColumn = columns.find(col => 
       col.name.toLowerCase() === 'todo' || 
       col.name.toLowerCase() === 'to do'
@@ -241,18 +225,14 @@ const BacklogView = ({
     }
     
     if (!todoColumn) {
-      // Fallback to the first column if no suitable column found
       todoColumn = columns[0];
     }
     
-    // Get current column's tasks for index calculation
     const sourceTasks = getTasks(task.columnId);
     const sourceIndex = sourceTasks.findIndex(t => t.id === task.id);
     
-    // Get target column's tasks
     const targetTasks = getTasks(todoColumn.id);
     
-    // Move the task to the target column
     onMoveTask(
       task.id, 
       task.columnId, 
@@ -261,20 +241,16 @@ const BacklogView = ({
       targetTasks.length
     );
     
-    // Refresh the task lists after moving
     setTimeout(collectTasks, 500);
   };
 
   const moveAllStaleToBacklog = () => {
-    // Confirm the action first
     if (!window.confirm(`Move all ${filteredStaleTasks.length} stale tasks to backlog?`)) {
       return;
     }
     
-    // Process each task one by one
     Promise.all(filteredStaleTasks.map(task => moveToBacklog(task)))
       .then(() => {
-        // Refresh once all movements are done
         collectTasks();
       });
   };

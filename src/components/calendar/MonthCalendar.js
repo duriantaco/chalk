@@ -12,7 +12,6 @@ const MonthCalendar = ({
   const { days, rows } = monthData;
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Helper function to check if two dates are the same day
   const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
     return (
@@ -22,7 +21,6 @@ const MonthCalendar = ({
     );
   };
 
-  // Get the appropriate priority classes for styling
   const getPriorityClasses = (priority) => {
     switch(priority) {
       case 'high': return 'border-red-500';
@@ -34,7 +32,6 @@ const MonthCalendar = ({
 
   return (
     <div className="bg-gray-850 rounded-lg border border-gray-700 overflow-hidden">
-      {/* Calendar header with day names */}
       <div className="grid grid-cols-7 bg-gray-800 border-b border-gray-700">
         {weekDays.map((day, i) => (
           <div key={i} className="py-2 text-center text-sm font-medium text-gray-400">
@@ -43,7 +40,6 @@ const MonthCalendar = ({
         ))}
       </div>
       
-      {/* Calendar grid with days */}
       <div 
         className="grid grid-cols-7" 
         style={{ gridTemplateRows: `repeat(${rows}, minmax(120px, 1fr))` }}
