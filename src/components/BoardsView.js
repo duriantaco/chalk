@@ -28,7 +28,6 @@ const BoardsView = ({ group, boards, onSelectBoard, onCreateBoard, onBack }) => 
   
   return (
     <div className="p-6 h-full overflow-y-auto">
-      {/* Header */}
       <div className="flex items-center mb-6 pb-4 border-b border-gray-800">
         <button 
           className="flex items-center mr-4 px-3 py-1.5 text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50"

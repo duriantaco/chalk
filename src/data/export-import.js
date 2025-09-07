@@ -1,5 +1,6 @@
 // src/data/export-import.js
 import { ydoc, persistence } from './store';
+import { safeLocalStorage } from './store';
 
 export const exportData = async () => {
   try {
@@ -51,7 +52,7 @@ export const importData = async (jsonData) => {
     }
     
     const backupData = await exportData();
-    localStorage.setItem('chalk-import-backup', backupData);
+      safeLocalStorage.setItem('chalk-import-backup', backupData);
     
     try {
       ydoc.getMap('groups').clear();

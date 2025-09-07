@@ -23,7 +23,7 @@ const Notification = ({ notification, onDismiss }) => {
       setIsExiting(true);
       setTimeout(() => {
         onDismiss();
-      }, 300); // 300ms for exit animation
+      }, 300);
     }, notification.duration || 5000);
 
     return () => clearTimeout(timer);
@@ -39,21 +39,25 @@ const Notification = ({ notification, onDismiss }) => {
       borderColor = 'border-amber-600';
       iconBg = 'bg-amber-700';
       break;
+      
     case 'success':
       bgColor = 'bg-emerald-900/90';
       borderColor = 'border-emerald-600';
       iconBg = 'bg-emerald-700';
       break;
+
     case 'error':
       bgColor = 'bg-red-900/90';
       borderColor = 'border-red-600';
       iconBg = 'bg-red-700';
       break;
+
     case 'info':
       bgColor = 'bg-indigo-900/90';
       borderColor = 'border-indigo-600';
       iconBg = 'bg-indigo-700';
       break;
+
     default:
       break;
   }

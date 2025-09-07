@@ -1,8 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import TaskAnalytics from './TaskAnalytics';
 import { getTaskAnalytics } from '../data/store';
 
 const TaskDetailView = ({ task, onClose, onUpdate, onDelete }) => {
+  const overlayRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const [editedTask, setEditedTask] = useState({
     content: task.content,
     description: task.description || '',
@@ -12,19 +31,70 @@ const TaskDetailView = ({ task, onClose, onUpdate, onDelete }) => {
     assignedTo: task.assignedTo || '',
     estimatedTime: task.estimatedTime || '',
     completed: task.completed || false,
-    percentComplete: task.percentComplete || 0
+    percentComplete: task.percentComplete || 0,
+    subtasks: task.subtasks || [],
+    forceOverdue: task.forceOverdue || false,
   });
-  
-  const [newLabel, setNewLabel] = useState('');
-  const [activeTab, setActiveTab] = useState('details');
+    const [attachments, setAttachments] = useState(task.attachments || []);
+    const [newLabel, setNewLabel] = useState('');
+    const [activeTab, setActiveTab] = useState('details');
+    const [newSubtask, setNewSubtask] = useState('');
+
+    const makeId = () =>
+    (globalThis.crypto?.randomUUID?.() ?? `sub_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+
+    const recomputePercentFromSubs = (subs) => {
+      if (!subs?.length) 
+        return editedTask.percentComplete;
+
+      const done = subs.filter(s => s.done).length;
+      return Math.round((done / subs.length) * 100);
+    };
+
+    const addSubtask = () => {
+      const t = (newSubtask || '').trim();
+      if (!t) 
+        return;
+
+      const next = [ ...(editedTask.subtasks || []), { id: makeId(), content: t, done: false } ];
+      const pct = recomputePercentFromSubs(next);
+      setEditedTask(et => ({
+        ...et,
+        subtasks: next,
+        percentComplete: pct,
+        completed: pct === 100 ? true : et.completed
+      }));
+      setNewSubtask('');
+    };
+
+    const toggleSubtask = (id) => {
+      const next = (editedTask.subtasks || []).map(s => s.id === id ? ({ ...s, done: !s.done }) : s);
+      const pct = recomputePercentFromSubs(next);
+      setEditedTask(et => ({
+        ...et,
+        subtasks: next,
+        percentComplete: pct,
+        completed: pct === 100 ? true : et.completed
+      }));
+    };
+
+    const removeSubtask = (id) => {
+      const next = (editedTask.subtasks || []).filter(s => s.id !== id);
+      const pct = recomputePercentFromSubs(next);
+      setEditedTask(et => ({
+        ...et,
+        subtasks: next,
+        percentComplete: pct,
+        completed: pct === 100 ? true : et.completed
+      }));
+    };
   
   useEffect(() => {
     const handleEscapeKey = (e) => {
       if (e.key === 'Escape') onClose();
     };
-    
-    document.addEventListener('keydown', handleEscapeKey);
-    return () => document.removeEventListener('keydown', handleEscapeKey);
+    document.addEventListener('keydown', handleEscapeKey, true); 
+    return () => document.removeEventListener('keydown', handleEscapeKey, true);
   }, [onClose]);
 
   const handleChange = (e) => {
@@ -66,19 +136,41 @@ const TaskDetailView = ({ task, onClose, onUpdate, onDelete }) => {
       labels: editedTask.labels.filter(label => label !== labelToRemove)
     });
   };
+
+  const handleAddAttachments = async () => {
+    try {
+      const files = await window.api.invoke('attachments:chooseAndCopy');
+      if (Array.isArray(files) && files.length) {
+        setAttachments(prev => [...prev, ...files]);
+      }
+    } catch (err) {
+      console.error('attach failed', err);
+    }
+  };
+
+  const handleRemoveAttachment = (id) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
   
   const handleSubmit = (e) => {
     e.preventDefault();
-    onUpdate(task.id, editedTask);
+    onUpdate(task.id, { ...editedTask, attachments });
     onClose();
   };
 
   const getPriorityColor = (priority) => {
     switch(priority) {
-      case 'high': return { bg: 'bg-red-600/20', border: 'border-red-500', text: 'text-red-400' };
-      case 'medium': return { bg: 'bg-amber-600/20', border: 'border-amber-500', text: 'text-amber-400' };
-      case 'low': return { bg: 'bg-emerald-600/20', border: 'border-emerald-500', text: 'text-emerald-400' };
-      default: return { bg: 'bg-emerald-600/20', border: 'border-emerald-500', text: 'text-emerald-400' };
+      case 'high': 
+        return { bg: 'bg-red-600/20', border: 'border-red-500', text: 'text-red-400' };
+
+      case 'medium': 
+        return { bg: 'bg-amber-600/20', border: 'border-amber-500', text: 'text-amber-400' };
+
+      case 'low': 
+        return { bg: 'bg-emerald-600/20', border: 'border-emerald-500', text: 'text-emerald-400' };
+
+      default: 
+        return { bg: 'bg-emerald-600/20', border: 'border-emerald-500', text: 'text-emerald-400' };
     }
   };
 
@@ -136,6 +228,108 @@ const TaskDetailView = ({ task, onClose, onUpdate, onDelete }) => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="form-group">
+
+              <div className="form-group mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-400">Attachments</label>
+                  <button
+                    type="button"
+                    onClick={handleAddAttachments}
+                    className="px-2.5 py-1 text-xs rounded bg-sky-700 hover:bg-sky-600 text-white"
+                  >
+                    Add images…
+                  </button>
+                </div>
+
+                {attachments.length === 0 ? (
+                  <div className="text-xs text-gray-500 bg-gray-900/50 border border-dashed border-gray-700 rounded-md p-3">
+                    No attachments yet.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {attachments.map(att => (
+                      <div key={att.id} className="relative group border border-gray-700 rounded overflow-hidden bg-gray-900">
+                        <img
+                          src={att.url || `file://${att.path}`}
+                          alt=""
+                          className="w-full h-24 object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(att.id)}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs px-1.5 py-0.5 rounded bg-red-700/80 text-white"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="form-group mt-4">
+              <label className="block text-sm font-medium text-gray-400 mb-1">
+                Checklist
+              </label>
+
+              {(editedTask.subtasks?.length ?? 0) > 0 && (
+                <div className="mb-3">
+                  <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                      style={{ width: `${editedTask.percentComplete}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-gray-400 mt-1">
+                    <span>{editedTask.subtasks.filter(s => s.done).length}/{editedTask.subtasks.length} done</span>
+                    <span>{editedTask.percentComplete}%</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {(editedTask.subtasks || []).map(s => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!!s.done}
+                      onChange={() => toggleSubtask(s.id)}
+                      className="accent-indigo-600"
+                    />
+                    <div className={`flex-1 text-sm ${s.done ? 'line-through opacity-60' : 'text-gray-200'}`}>
+                      {s.content}
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs text-red-500 hover:text-red-300"
+                      onClick={() => removeSubtask(s.id)}
+                    >
+                      remove
+                    </button>
+                  </div>
+                ))}
+
+                <div className="flex gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={newSubtask}
+                    onChange={e => setNewSubtask(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
+                    placeholder="Add a subtask…"
+                    className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    className="px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                    onClick={addSubtask}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+
                 <label htmlFor="dueDate" className="block text-sm font-medium text-gray-400 mb-1">
                   Due Date
                 </label>
@@ -147,6 +341,30 @@ const TaskDetailView = ({ task, onClose, onUpdate, onDelete }) => {
                   onChange={handleChange}
                   className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
+
+                <div className="mt-2 flex items-center gap-3">
+                  <label className="flex items-center text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      name="forceOverdue"
+                      checked={!!editedTask.forceOverdue}
+                      onChange={handleChange}
+                      className="mr-2 accent-red-600"
+                    />
+                    Force overdue (ignore date)
+                  </label>
+                  <button
+                    type="button"
+                    className="px-2 py-1 text-xs bg-amber-700 hover:bg-amber-600 text-white rounded"
+                    onClick={() => {
+                      const y = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+                      setEditedTask(et => ({ ...et, dueDate: et.dueDate || y }));
+                    }}
+                  >
+                    Set due to yesterday
+                  </button>
+                </div>
+
               </div>
               
               <div className="form-group">
@@ -238,10 +456,20 @@ const TaskDetailView = ({ task, onClose, onUpdate, onDelete }) => {
         return null;
     }
   };
-  
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
-      <div className="bg-gray-850 w-full max-w-xl rounded-lg shadow-2xl border border-gray-700 max-h-[90vh] flex flex-col">
+    <div
+      ref={overlayRef}
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="bg-gray-850 w-full max-w-xl rounded-lg shadow-2xl border border-gray-700 max-h-[90vh] flex flex-col"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
           <div className="px-5 py-4 border-b border-gray-700 flex items-center justify-between">
             <div className="flex items-center">

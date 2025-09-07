@@ -7,7 +7,6 @@ const AchievementsView = ({
   getTasks,
   onBack,
   earnedAchievements = [],
-  avatarLevel = 1,
   streakData = {
     currentStreak: 0,
     longestStreak: 0
@@ -129,7 +128,8 @@ const AchievementsView = ({
   
   const calculatePerfectWeeks = (dates) => {
     // kiv,  need to group dates by week and count
-    if (dates.length === 0) return 0;
+    if (dates.length === 0) 
+      return 0;
     
     const sortedDates = dates.map(d => new Date(d)).sort((a, b) => a - b);
     

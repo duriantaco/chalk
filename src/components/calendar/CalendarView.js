@@ -21,7 +21,6 @@ const CalendarView = ({
   const [quickAddContent, setQuickAddContent] = useState('');
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   
-  // Memoize and calculate date task mapping
   React.useEffect(() => {
     const allTasks = [];
     columns.forEach(column => {
@@ -40,7 +39,6 @@ const CalendarView = ({
     groupTasksByDate(allTasks);
   }, [columns, getTasks, searchTerm, filters]);
   
-  // Group tasks by date - this is an expensive operation, so we memoize it
   const groupTasksByDate = React.useCallback((taskList) => {
     const map = {};
     

@@ -27,15 +27,14 @@ import BoardView from './components/BoardView';
 import DashboardView from './components/DashboardView';
 import AchievementsView from './components/AchievementsView';
 import SearchTasksView from './components/SearchTasksView';
-import GraphView from './components/GraphView'; 
 import NotificationSystem from './components/NotificationSystem';
 import Sidebar from './components/Sidebar';
 import SettingsView from './components/SettingsView';
-import PasswordDialog from './components/PasswordDialog';
-import { isAppUnlocked } from './utils/passwordManager';
 import { initializeTheme, applyTheme, THEMES, setupThemeObserver } from './utils/themeManager';
 import BacklogView from './components/BacklogView';
 import { setupStaleTaskScheduler } from './utils/backlogManager';
+import StorageWarning from './components/StorageWarning';
+import { safeLocalStorage } from './data/store';
 
 const App = () => {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -46,14 +45,30 @@ const App = () => {
   const [currentView, setCurrentView] = useState('groups');
   const [notifications, setNotifications] = useState([]);
   const [achievements, setAchievements] = useState([]);
-  const [appLocked, setAppLocked] = useState(!isAppUnlocked());
   const [backlogSchedulerActive, setBacklogSchedulerActive] = useState(true);
+  const [pendingFocus, setPendingFocus] = useState(null);
 
   useEffect(() => {
     const init = async () => {
       try {
         setIsLoaded(false);
         
+          const checkDataLoss = () => {
+          const hadData = localStorage.getItem('chalk-had-data') === 'true';
+          const hasBackup = localStorage.getItem('chalk-emergency-backup') !== null;
+          
+          if (hadData && !hasBackup) {
+            addNotification({
+              type: 'error',
+              title: 'Data Recovery Needed',
+              message: 'Your data appears to be missing. Check Settings > Data Management for recovery options.',
+              duration: 0
+            });
+          }
+        };
+        
+        checkDataLoss();
+
         const initTimeout = setTimeout(() => {
           console.error('Store initialization timed out');
           setIsLoaded(true);
@@ -67,7 +82,6 @@ const App = () => {
         
         await initializeStore();
         clearTimeout(initTimeout);
-        console.log('Store initialized');
         
         const savedTheme = initializeTheme();
         setCurrentTheme(savedTheme);
@@ -139,9 +153,7 @@ const App = () => {
 
   useEffect(() => {
     if (isLoaded) {
-      setTimeout(() => {
-        console.log("Applying global theme fix...");
-        
+      setTimeout(() => {        
         document.querySelectorAll('.bg-gray-800, .bg-gray-850, .bg-gray-900, .workspace-card, .card-metallic')
           .forEach(el => {
             el.classList.add('theme-card');
@@ -162,11 +174,12 @@ const App = () => {
             el.classList.add('theme-button-primary');
           });
           
-        document.querySelectorAll('.text-white, .text-gray-300')
+        document.querySelectorAll('.text-gray-300, .text-gray-400, .text-gray-500')
           .forEach(el => {
-            el.classList.add('theme-text-primary');
+            const hasExplicitColor = /\btext-(white|black|gray-\d{3}|red-\d{3}|amber-\d{3}|emerald-\d{3}|indigo-\d{3}|blue-\d{3}|purple-\d{3}|pink-\d{3})\b/.test(el.className);
+            if (!hasExplicitColor) el.classList.add('theme-text-primary');
           });
-          
+
         document.querySelectorAll('.text-gray-400, .text-gray-500')
           .forEach(el => {
             el.classList.add('theme-text-secondary');
@@ -177,7 +190,7 @@ const App = () => {
 
   useEffect(() => {
     if (achievements.length > 0) {
-      localStorage.setItem('chalk-achievements', JSON.stringify(achievements));
+      safeLocalStorage.setItem('chalk-achievements', JSON.stringify(achievements));
     }
   }, [achievements]);
 
@@ -331,6 +344,12 @@ const App = () => {
     setCurrentView('dashboard');
   };
   
+  const handleShowHome = () => {
+    setCurrentGroupId(null);
+    setCurrentBoardId(null);
+    setCurrentView('groups');
+  };
+
   const handleShowAchievements = () => {
     setCurrentView('achievements');
   };
@@ -339,15 +358,27 @@ const App = () => {
     setCurrentView('search');
   };
   
-  const handleShowGraph = () => {
-    setCurrentView('graph');
-  };
-  
-  const handleTaskClick = (task) => {
-    setCurrentGroupId(task.groupId);
-    setCurrentBoardId(task.boardId);
-    setCurrentView('board');
-  };
+ const handleTaskClick = (t) => {
+   const taskId  = t.taskId ?? t.id;
+   const boardId = t.boardId ?? currentBoardId;
+   let groupId   = t.groupId ?? currentGroupId;
+
+   if (!groupId && boardId) {
+     for (const g of getGroups()) {
+       const bs = getBoards(g.id);
+       if (bs.some(b => b.id === boardId)) { groupId = g.id; 
+        break; }
+     }
+   }
+
+   if (!boardId) 
+    return; 
+
+   setCurrentGroupId(groupId ?? null);
+   setCurrentBoardId(boardId);
+   setCurrentView('board');
+   setPendingFocus({ taskId, openModal: true });
+ };
 
   const handleBackToGroups = () => {
     setCurrentGroupId(null);
@@ -476,9 +507,7 @@ const App = () => {
     <div 
       className={`min-h-screen flex app-container ${currentTheme}`}
     >
-      {appLocked ? (
-        <PasswordDialog onSuccess={handleUnlock} />
-      ) : (
+     (
         <>
           <Sidebar 
             groups={groups}
@@ -487,16 +516,17 @@ const App = () => {
             onCreateGroup={handleCreateGroup}
             onDeleteGroup={handleDeleteGroup}
             currentTheme={currentTheme}  
+            onShowHome={handleShowHome} 
             onThemeChange={handleThemeChange} 
             onShowDashboard={handleShowDashboard}
             onShowAchievements={handleShowAchievements}
             onShowSearch={handleShowSearch}
-            onShowGraph={handleShowGraph}
             onShowSettings={handleShowSettings}
             onShowBacklog={handleShowBacklog}
           />
           
           <div className="flex-1 overflow-hidden flex flex-col">
+            <StorageWarning />
             {currentView === 'groups' && (
               <PageTransition transitionKey="groups">
                 <EnhancedGroupsView 
@@ -535,6 +565,8 @@ const App = () => {
                 onCreateWorkspaceItem={(type, content, metadata) => handleCreateWorkspaceItem(currentBoardId, type, content, metadata)}
                 onUpdateWorkspaceItem={handleUpdateWorkspaceItem}
                 onDeleteWorkspaceItem={handleDeleteWorkspaceItem}
+                autoFocusTask={pendingFocus}
+                onConsumedFocus={() => setPendingFocus(null)}
               />
             )}
   
@@ -592,27 +624,16 @@ const App = () => {
                 onDeleteTask={handleDeleteTask}
                 onBack={handleBackToGroups}
                 onSelectTask={handleTaskClick}
+                createColumn={createColumn} 
               />
             )}
             
-            {currentView === 'graph' && (
-              <GraphView
-                groups={groups}
-                getBoards={getBoards}
-                getColumns={getColumns}
-                getTasks={getTasks}
-                onSelectTask={handleTaskClick}
-                onSelectBoard={handleSelectBoard}
-                onBack={handleBackToGroups}
-              />
-            )}
           </div>
           <NotificationSystem 
             notifications={notifications}
             onDismiss={removeNotification}
           />
         </>
-      )}
     </div>
   );
 };

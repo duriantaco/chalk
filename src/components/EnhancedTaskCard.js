@@ -1,12 +1,60 @@
 import React from 'react';
 
-const EnhancedTaskCard = ({ task, index, provided, snapshot, onClick, getPriorityClasses, formatDate, isOverdue }) => {
+const EnhancedTaskCard = ({ task, provided, snapshot, onClick, getPriorityClasses, formatDate, isOverdue, onAddAttachments }) => {
   const priorityClasses = getPriorityClasses(task.priority);
   const percentComplete = task.percentComplete || 0;
   
   const handleCardClick = (e) => {
     if (onClick && !snapshot.isDragging) {
       onClick(e);
+    }
+  };
+
+  const subTotal = Array.isArray(task.subtasks) ? task.subtasks.length : 0;
+  const subDone = subTotal ? task.subtasks.filter(s => s.done).length : 0;
+
+  const dueDateObj = task.dueDate ? new Date(task.dueDate) : null;
+
+  const startOfDay = (d) => { const t = new Date(d); t.setHours(0,0,0,0); 
+    return t; };
+
+  const today0 = startOfDay(new Date());
+  const daysDiff = dueDateObj ? Math.ceil((startOfDay(dueDateObj) - today0) / (1000 * 60 * 60 * 24)) : null;
+
+  const dueLabel =
+    daysDiff === null ? '' :
+    daysDiff === 0 ? 'today' :
+    daysDiff > 0 ? `in ${daysDiff}d` :
+    `${Math.abs(daysDiff)}d`;
+
+  const isDueSoon = daysDiff !== null && daysDiff >= 0 && daysDiff <= 2 && !task.completed;
+
+  const hasSubs = Array.isArray(task.subtasks) && task.subtasks.length > 0;
+  const subPct = hasSubs ? Math.round((subDone / subTotal) * 100) : 0;
+  const displayPct = hasSubs ? subPct : percentComplete;
+
+  const onDragOverFile = (e) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const onDropFiles = async (e) => {
+
+    if (!e.dataTransfer?.files?.length) 
+      return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const paths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean);
+
+    if (!paths.length) 
+      return;
+
+    const copied = await window.api.invoke('attachments:copyPaths', paths);
+    if (typeof onAddAttachments === 'function') {
+      onAddAttachments(task.id, copied);
     }
   };
   
@@ -17,6 +65,8 @@ const EnhancedTaskCard = ({ task, index, provided, snapshot, onClick, getPriorit
       {...provided.dragHandleProps}
       className="task-card-wrapper"
       data-task-id={task.id}
+      onDragOverCapture={onDragOverFile}
+      onDropCapture={onDropFiles}
     >
       <div 
         className={`bg-gray-900 rounded-md border-l-4 ${priorityClasses} ${
@@ -30,18 +80,30 @@ const EnhancedTaskCard = ({ task, index, provided, snapshot, onClick, getPriorit
               {task.content}
             </div>
             
-            {task.columnStatus === 'in-progress' && percentComplete > 0 && (
+            {Array.isArray(task.attachments) && task.attachments.length > 0 && (
+              <div className="mt-2 border border-gray-800 rounded overflow-hidden">
+                <img
+                  src={(task.attachments[0].url) || (`file://${(task.attachments[0].path || '').replace(/\\/g,'/')}`)}
+                  alt=""
+                  className="w-full h-24 object-cover"
+                  draggable={false}
+                />
+              </div>
+            )}
+
+            {displayPct > 0 && (
               <div className="mt-2">
                 <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className={`h-full rounded-full transition-all duration-300 ${
-                      percentComplete === 100 ? 'bg-emerald-500' : 'bg-indigo-500'
+                      displayPct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'
                     }`}
-                    style={{ width: `${percentComplete}%` }}
-                  ></div>
+                    style={{ width: `${displayPct}%` }}
+                  />
                 </div>
-                <div className="text-xs text-gray-400 mt-1 text-right">
-                  {percentComplete}%
+                <div className="text-xs text-gray-400 mt-1 flex items-center justify-between">
+                  <span className="min-w-[60px]">{hasSubs ? `${subDone}/${subTotal} done` : ''}</span>
+                  <span>{displayPct}%</span>
                 </div>
               </div>
             )}
@@ -71,6 +133,26 @@ const EnhancedTaskCard = ({ task, index, provided, snapshot, onClick, getPriorit
                 </div>
               )}
               
+              {task.dueDate && !task.completed && isOverdue(task.dueDate) && (
+                <span title={`Due ${dueLabel}`} className="px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40">
+                  Overdue {dueLabel}
+                </span>
+              )}
+              {task.dueDate && !task.completed && !isOverdue(task.dueDate) && isDueSoon && (
+                <span title={`Due ${dueLabel}`} className="px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-300 border border-amber-700/30">
+                  Due {dueLabel}
+                </span>
+              )}
+
+              {subTotal > 0 && (
+                <span className={`px-1.5 py-0.5 rounded border ${
+                  subDone === subTotal ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40'
+                                       : 'bg-indigo-900/40 text-indigo-300 border-indigo-700/40'
+                }`}>
+                  {subDone}/{subTotal}
+                </span>
+              )}
+
               {task.assignedTo && (
                 <div className="flex items-center">
                   <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-xs text-white font-semibold">

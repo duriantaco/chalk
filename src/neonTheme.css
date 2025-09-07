@@ -1,12 +1,12 @@
 /* src/neonTheme.css */
 :root {
-  --neon-primary: #6d28d9;     /* Indigo/Purple */
-  --neon-secondary: #8b5cf6;   /* Lighter indigo */
-  --neon-accent: #f97316;      /* Orange */
-  --neon-success: #10b981;     /* Emerald */
-  --neon-warning: #f59e0b;     /* Amber */
-  --neon-danger: #ef4444;      /* Red */
-  --neon-info: #3b82f6;        /* Blue */
+  --neon-primary: #6d28d9;
+  --neon-secondary: #8b5cf6;
+  --neon-accent: #f97316;
+  --neon-success: #10b981;
+  --neon-warning: #f59e0b;
+  --neon-danger: #ef4444;
+  --neon-info: #3b82f6;
   
   --neon-primary-glow: 0 0 10px rgba(109, 40, 217, 0.7);
   --neon-secondary-glow: 0 0 10px rgba(139, 92, 246, 0.7);
@@ -17,7 +17,6 @@
   --neon-info-glow: 0 0 10px rgba(59, 130, 246, 0.7);
 }
 
-/* Neon borders for task cards based on priority */
 .neon-border-high {
   border-color: var(--neon-danger) !important;
   box-shadow: 0 0 5px rgba(239, 68, 68, 0.7);
@@ -33,7 +32,6 @@
   box-shadow: 0 0 5px rgba(16, 185, 129, 0.7);
 }
 
-/* Neon glowing buttons */
 .btn-neon {
   position: relative;
   overflow: hidden;
@@ -79,7 +77,6 @@
   box-shadow: 0 0 15px rgba(249, 115, 22, 0.9);
 }
 
-/* Neon text */
 .neon-text-primary {
   color: var(--neon-primary);
   text-shadow: 0 0 5px rgba(109, 40, 217, 0.7);
@@ -90,7 +87,6 @@
   text-shadow: 0 0 5px rgba(249, 115, 22, 0.7);
 }
 
-/* Neon icons */
 .neon-icon {
   filter: drop-shadow(0 0 2px currentColor);
   transition: filter 0.3s ease;
@@ -100,7 +96,6 @@
   filter: drop-shadow(0 0 5px currentColor);
 }
 
-/* Pulsing effect for high priority tasks */
 @keyframes neon-pulse {
   0% {
     box-shadow: 0 0 5px rgba(239, 68, 68, 0.7);
@@ -117,7 +112,6 @@
   animation: neon-pulse 2s infinite;
 }
 
-/* Neon backgrounds */
 .bg-neon-dark {
   background-color: #121212;
   background-image: 
@@ -125,7 +119,6 @@
     radial-gradient(circle at 80% 20%, rgba(249, 115, 22, 0.1) 0%, transparent 35%);
 }
 
-/* Highlight effect on task hover */
 .task-card {
   transition: all 0.3s ease;
 }
@@ -135,7 +128,6 @@
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
-/* Neon scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -155,7 +147,6 @@
   box-shadow: var(--neon-primary-glow);
 }
 
-/* Theme toggle button effect */
 .theme-toggle {
   position: relative;
   width: 40px;
@@ -185,7 +176,6 @@
   box-shadow: var(--neon-primary-glow);
 }
 
-/* Add neon outlines to modals */
 .modal-neon {
   border: 1px solid var(--neon-primary);
   box-shadow: 0 0 15px rgba(109, 40, 217, 0.5);

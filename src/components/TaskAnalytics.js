@@ -41,10 +41,17 @@ const TaskAnalytics = ({ task, getTaskAnalytics }) => {
   
   const getPriorityColor = () => {
     switch(analytics.priority) {
-      case 'high': return 'text-red-500';
-      case 'medium': return 'text-amber-500';
-      case 'low': return 'text-emerald-500';
-      default: return 'text-gray-400';
+      case 'high': 
+        return 'text-red-500';
+
+      case 'medium': 
+        return 'text-amber-500';
+
+      case 'low': 
+        return 'text-emerald-500';
+        
+      default: 
+        return 'text-gray-400';
     }
   };
 
@@ -182,7 +189,6 @@ const TaskAnalytics = ({ task, getTaskAnalytics }) => {
 
 const calculateEfficiencyScore = (analytics) => {
 
-  // in real app,compare against averages, expected times, etc. now just placeholder
   const averageCycleTime = 7 * 24 * 60 * 60 * 1000; 
   
   if (analytics.cycleTimeMs <= 0) return 100;

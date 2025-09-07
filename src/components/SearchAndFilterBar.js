@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { debounce } from 'lodash';
 
+const EMPTY_FILTERS = Object.freeze({});
+
 const SearchAndFilterBar = ({ 
   onSearch, 
   onFilter,
   availableLabels = [],
-  filterValues = {}, 
+  filterValues, 
   showAdvancedFilters = false
 }) => {
   const [searchText, setSearchText] = useState('');
@@ -15,30 +17,39 @@ const SearchAndFilterBar = ({
     completed: 'all',  // all, completed, active
     dueDate: 'any',    // any, overdue, today, week, month
     labels: [],        // array of selected labels
-    ...filterValues
+    ...(filterValues ?? EMPTY_FILTERS), 
   });
+
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, ...filterValues }));
+  }, [filterValues]);
   
+  useEffect(() => {
+    if (!filterValues) 
+      return;
+
+    setFilters(prev => {
+      const next = { ...prev, ...filterValues };
+      for (const k in next) {
+        if (next[k] !== prev[k]) 
+          return next;
+      }
+
+      return prev;
+    });
+  }, [filterValues]);
+
   const searchInputRef = useRef(null);
   const dropdownRef = useRef(null);
   
-  const debouncedSearch = useRef(
-    debounce((term) => {
-      onSearch(term);
-    }, 300) 
+  const debouncedNotify = useRef(
+    debounce(({ term, filters }) => {
+      onSearch?.((term ?? '').toString());
+      onFilter?.(filters);
+    }, 250)
   ).current;
   
-  const debouncedFilter = useRef(
-    debounce((newFilters) => {
-      onFilter(newFilters);
-    }, 300) 
-  ).current;
-  
-  useEffect(() => {
-    return () => {
-      debouncedSearch.cancel();
-      debouncedFilter.cancel();
-    };
-  }, [debouncedSearch, debouncedFilter]);
+  useEffect(() => () => debouncedNotify.cancel(), [debouncedNotify]);
   
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -56,7 +67,7 @@ const SearchAndFilterBar = ({
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchText(value);
-    debouncedSearch(value);
+    debouncedNotify({ term: value, filters });
   };
   
   const handleFilterChange = (filterType, value) => {
@@ -65,7 +76,7 @@ const SearchAndFilterBar = ({
       [filterType]: value
     };
     setFilters(newFilters);
-    debouncedFilter(newFilters);
+    debouncedNotify({ term: searchText, filters: newFilters });
   };
   
   const handleLabelToggle = (label) => {
@@ -78,7 +89,7 @@ const SearchAndFilterBar = ({
   
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
@@ -91,14 +102,11 @@ const SearchAndFilterBar = ({
   }, []);
   
   const handleClearFilters = () => {
-    const resetFilters = {
-      priority: 'all',
-      completed: 'all',
-      dueDate: 'any',
-      labels: []
-    };
+    const resetFilters = {priority: 'all', completed: 'all', dueDate: 'any', labels: [] };
     setFilters(resetFilters);
-    onFilter(resetFilters);
+    debouncedNotify.cancel();
+    onFilter?.(resetFilters);
+    onSearch?.(''); 
   };
   
   return (
@@ -123,7 +131,9 @@ const SearchAndFilterBar = ({
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-200"
               onClick={() => {
                 setSearchText('');
-                onSearch('');
+                debouncedNotify.cancel();
+                onSearch?.('');
+                onFilter?.(filters);
               }}
             >
               <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">

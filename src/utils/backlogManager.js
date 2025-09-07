@@ -90,15 +90,14 @@ import {
   };
   
   /**
-   * Setup a scheduled check for stale tasks
-   * @param {number} checkInterval How often to check (in milliseconds)
-   * @param {number} daysThreshold Number of days before a task is considered stale
-   * @param {function} onComplete Callback when process completes
-   * @returns {function} Function to cancel the scheduler
+   * @param {number} checkInterval
+   * @param {number} daysThreshold
+   * @param {function} onComplete 
+   * @returns {function}
    */
   export const setupStaleTaskScheduler = (
-    checkInterval = 24 * 60 * 60 * 1000, // Default: once a day
-    daysThreshold = 7, // Default: 7 days
+    checkInterval = 24 * 60 * 60 * 1000,
+    daysThreshold = 7,
     onComplete = null
   ) => {
     const runCheck = () => {
@@ -119,10 +118,9 @@ import {
   };
   
   /**
-   * Checks if a task is stale (not updated for a threshold period)
-   * @param {Object} task The task to check
-   * @param {number} daysThreshold Number of days threshold
-   * @returns {boolean} Whether the task is considered stale
+   * @param {Object} task
+   * @param {number} daysThreshold
+   * @returns {boolean}
    */
   export const isTaskStale = (task, daysThreshold = 7) => {
     if (!task || task.completed) return false;

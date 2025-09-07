@@ -7,7 +7,6 @@ const DayCalendar = ({
   formatCalendarDate,
   onTaskClick
 }) => {
-  // Get the appropriate priority classes for styling
   const getPriorityClasses = (priority) => {
     switch(priority) {
       case 'high': return 'border-red-500';

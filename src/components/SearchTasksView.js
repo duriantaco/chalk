@@ -1,6 +1,7 @@
 // src/components/SearchTasksView.js
 import React, { useState, useEffect } from 'react';
 import SearchAndFilterBar from './SearchAndFilterBar';
+import TaskCardMeta from './TaskCardMeta';
 
 const SearchTasksView = ({ 
   groups, 
@@ -65,117 +66,74 @@ const SearchTasksView = ({
     setAvailableLabels(Array.from(labelsSet));
     setIsLoading(false);
   };
-  
-  const handleSearch = (term) => {
+    
+  const handleSearch = (arg) => {
+    const term = typeof arg === 'string' ? arg : arg?.target?.value ?? '';
     setSearchTerm(term);
-    applySearchAndFilters(term, filters);
   };
-  
+
   const handleFilter = (newFilters) => {
     setFilters(newFilters);
-    applySearchAndFilters(searchTerm, newFilters);
   };
-  
-  const applySearchAndFilters = (term, appliedFilters) => {
-    const lowerCaseTerm = term.toLowerCase();
-    
-    const filtered = searchResults.filter(task => {
-      const matchesSearch = 
-        !term || 
-        task.content.toLowerCase().includes(lowerCaseTerm) || 
-        (task.description && task.description.toLowerCase().includes(lowerCaseTerm));
-      
-      if (!matchesSearch) return false;
-      
-      if (appliedFilters.priority !== 'all' && task.priority !== appliedFilters.priority) {
-        return false;
-      }
-      
-      if (appliedFilters.completed === 'completed' && !task.completed) {
-        return false;
-      }
-      if (appliedFilters.completed === 'active' && task.completed) {
-        return false;
-      }
-      
-      if (appliedFilters.dueDate !== 'any' && task.dueDate) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const dueDate = new Date(task.dueDate);
-        dueDate.setHours(0, 0, 0, 0);
-        
-        if (appliedFilters.dueDate === 'overdue' && dueDate >= today) {
-          return false;
-        }
-        
-        if (appliedFilters.dueDate === 'today') {
-          if (dueDate.getTime() !== today.getTime()) {
-            return false;
-          }
-        }
-        
-        if (appliedFilters.dueDate === 'week') {
-          const weekFromNow = new Date();
-          weekFromNow.setDate(today.getDate() + 7);
-          
-          if (dueDate < today || dueDate > weekFromNow) {
-            return false;
-          }
-        }
-        
-        if (appliedFilters.dueDate === 'month') {
-          const monthFromNow = new Date();
-          monthFromNow.setMonth(today.getMonth() + 1);
-          
-          if (dueDate < today || dueDate > monthFromNow) {
-            return false;
-          }
-        }
-      } else if (appliedFilters.dueDate !== 'any' && !task.dueDate) {
-        return false;
-      }
-      
-      if (appliedFilters.labels.length > 0) {
-        if (!task.labels || !Array.isArray(task.labels)) {
-          return false;
-        }
-        
-        const hasMatchingLabel = appliedFilters.labels.some(label => 
-          task.labels.includes(label)
-        );
-        
-        if (!hasMatchingLabel) {
-          return false;
-        }
-      }
-      
-      return true;
+
+  useEffect(() => {
+    const tasks = searchResults; 
+
+    const q = (searchTerm || '').toString().trim().toLowerCase();
+    const f = filters || {};
+
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    const results = tasks.filter(t => {
+      const content = (t.content ?? '').toString();
+      const description = (t.description ?? '').toString();
+      const hay = `${content} ${description}`.toLowerCase();
+
+      const matchesSearch = !q || hay.includes(q);
+
+      const priority = (t.priority ?? 'normal');
+      const matchesPriority = (f.priority === 'all') || (priority === f.priority);
+
+      const isCompleted = Boolean(t.completed);
+      const matchesCompleted =
+        f.completed === 'all' ||
+        (f.completed === 'completed' && isCompleted) ||
+        (f.completed === 'active' && !isCompleted);
+
+      const due = t.dueDate ? new Date(t.dueDate) : null;
+      const daysDiff = due ? (Math.floor((due - today) / 86400000)) : null;
+
+      const matchesDue =
+        f.dueDate === 'any' ||
+        (f.dueDate === 'overdue' && due && due < today) ||
+        (f.dueDate === 'today' && due && due.toDateString() === today.toDateString()) ||
+        (f.dueDate === 'week' && daysDiff !== null && daysDiff <= 7 && daysDiff >= 0) ||
+        (f.dueDate === 'month' && daysDiff !== null && daysDiff <= 31 && daysDiff >= 0);
+
+      const sel = Array.isArray(f.labels) ? f.labels : [];
+      const matchesLabels =
+        sel.length === 0 ||
+        (Array.isArray(t.labels) && sel.every(l => t.labels.includes(l)));
+
+      return matchesSearch && matchesPriority && matchesCompleted && matchesDue && matchesLabels;
     });
-    
-    setFilteredResults(filtered);
-  };
-  
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-  
-  const isOverdue = (dateString) => {
-    if (!dateString) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dueDate = new Date(dateString);
-    dueDate.setHours(0, 0, 0, 0);
-    return dueDate < today;
-  };
+
+    setFilteredResults(results);
+  }, [searchTerm, filters, searchResults]);
   
   const getPriorityClasses = (priority) => {
     switch(priority) {
-      case 'high': return 'border-red-500';
-      case 'medium': return 'border-amber-500';
-      case 'low': return 'border-emerald-500';
-      default: return 'border-transparent';
+      case 'high': 
+        return 'border-red-500';
+
+      case 'medium': 
+        return 'border-amber-500';
+
+      case 'low': 
+        return 'border-emerald-500';
+
+      default: 
+        return 'border-transparent';
     }
   };
   
@@ -227,13 +185,7 @@ const SearchTasksView = ({
                   className="mt-3 text-indigo-400 hover:text-indigo-300 text-sm"
                   onClick={() => {
                     setSearchTerm('');
-                    handleSearch('');
-                    handleFilter({
-                      priority: 'all',
-                      completed: 'all',
-                      dueDate: 'any',
-                      labels: []
-                    });
+                    setFilters({ priority: 'all', completed: 'all', dueDate: 'any', labels: [] });
                   }}
                 >
                   Clear all filters
@@ -244,7 +196,7 @@ const SearchTasksView = ({
                 <li 
                   key={task.id} 
                   className={`p-4 bg-gray-800 hover:bg-gray-750 cursor-pointer border-l-4 ${getPriorityClasses(task.priority)}`}
-                  onClick={() => onTaskClick(task)}
+                  onClick={() => onTaskClick({ boardId: task.boardId, columnId: task.columnId, taskId: task.id })}
                 >
                   <div className="flex items-start">
                     <div className="flex-1">
@@ -259,38 +211,19 @@ const SearchTasksView = ({
                           )}
                         </div>
                         <h4 className={`text-sm font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-white'}`}>
-                          {task.content}
+                          <span>{task.content}</span>
+                            {!task.completed && task.forceOverdue && (
+                              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40 uppercase tracking-wide">
+                                overdue
+                          </span>
+                          )}
                         </h4>
+
                       </div>
                       
                       <div className="mt-2 text-xs text-gray-400 pl-6">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="flex items-center">
-                            <span className="bg-gray-700 px-2 py-0.5 rounded">
-                              {task.boardName} / {task.columnName}
-                            </span>
-                          </div>
-                          
-                          {task.dueDate && (
-                            <div className={`flex items-center gap-1 ${isOverdue(task.dueDate) && !task.completed ? 'text-red-400' : ''}`}>
-                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                              <span>{formatDate(task.dueDate)}</span>
-                            </div>
-                          )}
-                          
-                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${
-                              task.priority === 'high' ? 'bg-red-500' : 
-                              task.priority === 'medium' ? 'bg-amber-500' : 
-                              'bg-emerald-500'
-                            }`}></span>
-                            <span className="capitalize">{task.priority}</span>
-                          </div>
-                        </div>
-                        
-                        {/* Labels */}
+                        <TaskCardMeta task={task} />
+
                         {task.labels && task.labels.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
                             {task.labels.map((label, index) => (
@@ -300,7 +233,7 @@ const SearchTasksView = ({
                             ))}
                           </div>
                         )}
-                        
+
                         {task.description && (
                           <div className="mt-2 text-gray-500 line-clamp-1">
                             {task.description}

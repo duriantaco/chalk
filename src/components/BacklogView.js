@@ -1,8 +1,7 @@
-// src/components/BacklogView.js
 import React, { useState, useEffect } from 'react';
 import SearchAndFilterBar from './SearchAndFilterBar';
-import EnhancedTaskCard from './EnhancedTaskCard';
-import { Draggable } from 'react-beautiful-dnd';
+import { parseDate } from '../utils/dateUtils';
+import TaskCardMeta from './TaskCardMeta';
 
 const BacklogView = ({ 
   groups, 
@@ -10,10 +9,10 @@ const BacklogView = ({
   getColumns, 
   getTasks,
   onMoveTask,
-  onUpdateTask,
-  onDeleteTask,
   onBack,
-  onSelectTask
+  onSelectTask,
+  onUpdateTask,
+  createColumn
 }) => {
   const [backlogTasks, setBacklogTasks] = useState([]);
   const [staleTasks, setSTaleTasks] = useState([]);
@@ -26,7 +25,7 @@ const BacklogView = ({
   });
   const [availableLabels, setAvailableLabels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('backlog'); // 'backlog' or 'stale'
+  const [activeTab, setActiveTab] = useState('backlog');
 
   useEffect(() => {
     collectTasks();
@@ -40,6 +39,25 @@ const BacklogView = ({
     const staleItems = [];
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const today0 = new Date(); today0.setHours(0,0,0,0)
+
+    const lastActivityDate = (task) => {
+      const candidates = [];
+      if (Array.isArray(task.movementHistory) && task.movementHistory.length) {
+        const lastMove = task.movementHistory[task.movementHistory.length - 1];
+        const mv = parseDate(lastMove?.timestamp);
+        if (mv) candidates.push(mv);
+      }
+
+      const upd = parseDate(task.updatedAt);
+      const crt = parseDate(task.createdAt);
+      if (upd) candidates.push(upd);
+      if (crt) candidates.push(crt);
+      if (!candidates.length) 
+        return null;
+
+      return new Date(Math.max(...candidates.map(d => d.getTime())));
+    };
     
     groups.forEach(group => {
       const boards = getBoards(group.id);
@@ -48,7 +66,12 @@ const BacklogView = ({
         const columns = getColumns(board.id);
         
         columns.forEach(column => {
-          const isBacklogColumn = column.name.toLowerCase().includes('backlog');
+
+          const isBacklogColumn =
+            column?.meta?.isBacklog === true ||
+            /(back\s*log|backlog|ice[-\s]*box|icebox|parking\s*lot|archive|later|someday)/i
+            .test(column.name || '');
+
           const tasks = getTasks(column.id);
           
           tasks.forEach(task => {
@@ -56,9 +79,13 @@ const BacklogView = ({
               task.labels.forEach(label => allLabels.add(label));
             }
             
-            const isStale = !task.completed && 
-                            new Date(task.updatedAt || task.createdAt) < oneWeekAgo &&
-                            !isBacklogColumn;
+            const lastTouch = lastActivityDate(task);
+            const due = parseDate(task.dueDate);
+            const isOverdueByDate = !!due && (new Date(due.setHours(0,0,0,0)) < today0);
+            const isOverdueForced = task.forceOverdue === true;
+            const isOverdue = isOverdueByDate || isOverdueForced;
+            const isInactive = !!lastTouch && lastTouch < oneWeekAgo;
+            const isStale = !task.completed && !isBacklogColumn && (isInactive || isOverdue);
             
             const enrichedTask = {
               ...task,
@@ -74,7 +101,8 @@ const BacklogView = ({
             
             if (isBacklogColumn) {
               backlogItems.push(enrichedTask);
-            } else if (isStale) {
+            } else if 
+            (isStale) {
               staleItems.push(enrichedTask);
             }
           });
@@ -96,11 +124,21 @@ const BacklogView = ({
     setFilters(newFilters);
   };
 
+  const toggleCompleted = (task) => {
+  const next = !task.completed;
+  onUpdateTask?.(task.id, {
+    completed: next,
+    percentComplete: next ? 100 : (task.percentComplete ?? 0),
+  });
+  setTimeout(collectTasks, 150);
+};
+
+
   const applySearchAndFilters = (task) => {
     if (searchTerm) {
-      const lowerCaseTerm = searchTerm.toLowerCase();
-      if (!task.content.toLowerCase().includes(lowerCaseTerm) && 
-          !(task.description && task.description.toLowerCase().includes(lowerCaseTerm))) {
+      const lowerCaseTerm = String(searchTerm).toLowerCase();
+      const hay = `${task.content ?? ''} ${task.description ?? ''}`.toLowerCase();
+      if (!hay.includes(lowerCaseTerm)) {
         return false;
       }
     }
@@ -116,10 +154,10 @@ const BacklogView = ({
     }
     
     if (filters.dueDate !== 'any' && task.dueDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dueDate = new Date(task.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const dueParsed = parseDate(task.dueDate);
+      if (!dueParsed) return false;
+      const dueDate = new Date(dueParsed); dueDate.setHours(0,0,0,0);
       
       if (filters.dueDate === 'overdue') {
         return dueDate < today && !task.completed;
@@ -140,11 +178,12 @@ const BacklogView = ({
         monthFromNow.setMonth(today.getMonth() + 1);
         return dueDate >= today && dueDate <= monthFromNow;
       }
-    } else if (filters.dueDate !== 'any' && !task.dueDate) {
+    } else if (
+      filters.dueDate !== 'any' && !task.dueDate) {
       return false;
     }
     
-    if (filters.labels.length > 0) {
+    if (Array.isArray(filters.labels) && filters.labels.length > 0) {
       if (!task.labels || !Array.isArray(task.labels)) {
         return false;
       }
@@ -157,91 +196,93 @@ const BacklogView = ({
         return false;
       }
     }
-    
     return true;
   };
 
   const filteredBacklogTasks = backlogTasks.filter(applySearchAndFilters);
   const filteredStaleTasks = staleTasks.filter(applySearchAndFilters);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const isOverdue = (dateString) => {
-    if (!dateString) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dueDate = new Date(dateString);
-    dueDate.setHours(0, 0, 0, 0);
-    return dueDate < today;
-  };
-
   const getPriorityClasses = (priority) => {
     switch(priority) {
-      case 'high': return 'border-red-500';
-      case 'medium': return 'border-amber-500';
-      case 'low': return 'border-emerald-500';
-      default: return 'border-transparent';
+      case 'high': 
+        return 'border-red-500';
+
+      case 'medium': 
+        return 'border-amber-500';
+
+      case 'low': 
+        return 'border-emerald-500';
+
+      default: 
+        return 'border-transparent';
     }
   };
+
+  const BACKLOG_REGEX = /(back\s*log|backlog|ice[-\s]*box|icebox|parking\s*lot|archive|later|someday)/i;
+
+  const moveFromBacklog = (task) => {
+    const columns = getColumns(task.boardId);
+
+    let target = columns.find(c => {
+      const n = (c.name || '').toLowerCase();
+      return n === 'to do' || n === 'todo';
+    });
+
+    if (!target) {
+      target = columns.find(c => !(c?.meta?.isBacklog || BACKLOG_REGEX.test(c.name || '')));
+    }
+
+    if (!target) target = columns[0];
+    if (!target || target.id === task.columnId) 
+      return;
+
+    const sourceTasks = getTasks(task.columnId);
+    const sourceIndex = sourceTasks.findIndex(t => t.id === task.id);
+    const targetTasks = getTasks(target.id);
+
+    onMoveTask(task.id, task.columnId, target.id, sourceIndex, targetTasks.length);
+    setTimeout(collectTasks, 300);
+  };
+
 
   const moveToBacklog = async (task) => {
     const board = getBoards(task.groupId).find(b => b.id === task.boardId);
     const columns = getColumns(board.id);
-    
-    let backlogColumn = columns.find(col => col.name.toLowerCase().includes('backlog'));
-    
-    const targetColumnId = backlogColumn ? backlogColumn.id : columns[0].id;
-    
-    const sourceTasks = getTasks(task.columnId);
-    const sourceIndex = sourceTasks.findIndex(t => t.id === task.id);
-    
-    const targetTasks = getTasks(targetColumnId);
-    
-    onMoveTask(
-      task.id, 
-      task.columnId, 
-      targetColumnId, 
-      sourceIndex, 
-      targetTasks.length
-    );
-    
-    setTimeout(collectTasks, 500);
-  };
 
-  const moveFromBacklog = (task) => {
-    const columns = getColumns(task.boardId);
-    
-    let todoColumn = columns.find(col => 
-      col.name.toLowerCase() === 'todo' || 
-      col.name.toLowerCase() === 'to do'
+    let backlogColumn = columns.find(col =>
+      /(back\s*log|backlog|ice[-\s]*box|icebox|parking\s*lot|archive|later|someday)/i
+        .test(col.name || '')
     );
-    
-    if (!todoColumn) {
-      todoColumn = columns.find(col => !col.name.toLowerCase().includes('backlog'));
+
+    if (!backlogColumn && typeof createColumn === 'function') {
+      const newId = createColumn(board.id, 'Backlog');
+      backlogColumn = { id: newId, name: 'Backlog', boardId: board.id, taskIds: [] };
     }
-    
-    if (!todoColumn) {
-      todoColumn = columns[0];
+
+    if (!backlogColumn) {
+      console.warn('No backlog column found or creatable on this board.');
+      return;
     }
-    
+
+    const targetColumnId = backlogColumn.id;
+
+    if (targetColumnId === task.columnId) {
+      return;
+    }
+
     const sourceTasks = getTasks(task.columnId);
     const sourceIndex = sourceTasks.findIndex(t => t.id === task.id);
-    
-    const targetTasks = getTasks(todoColumn.id);
-    
+    const targetTasks = getTasks(targetColumnId);
+
     onMoveTask(
-      task.id, 
-      task.columnId, 
-      todoColumn.id, 
-      sourceIndex, 
+      task.id,
+      task.columnId,
+      targetColumnId,
+      sourceIndex,
       targetTasks.length
     );
-    
-    setTimeout(collectTasks, 500);
+
+    setTimeout(collectTasks, 300);
   };
 
   const moveAllStaleToBacklog = () => {
@@ -367,51 +408,36 @@ const BacklogView = ({
                   <div className="flex items-start">
                     <div className="flex-1">
                       <div className="flex items-center">
-                        <div className={`w-4 h-4 mr-2 rounded border border-gray-600 flex-shrink-0 ${
-                          task.completed ? 'bg-emerald-600 border-emerald-600' : ''
-                        }`}>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleCompleted(task); }}
+                          aria-pressed={task.completed}
+                          aria-label={task.completed ? 'Mark as not completed' : 'Mark as completed'}
+                          className={`w-4 h-4 mr-2 rounded border flex-shrink-0
+                                      ${task.completed ? 'bg-emerald-600 border-emerald-600' : 'border-gray-600'}
+                                      focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                        >
                           {task.completed && (
-                            <svg className="w-full h-full text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg className="w-full h-full text-white" viewBox="0 0 24 24" fill="none">
                               <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>
                           )}
-                        </div>
+                        </button>
                         <h4 
                           className={`text-sm font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-white'}`}
                           onClick={() => onSelectTask(task)}
                         >
-                          {task.content}
+                          <span>{task.content}</span>
+                          {!task.completed && task.forceOverdue && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40 uppercase tracking-wide">
+                              overdue
+                            </span>
+                          )}
                         </h4>
                       </div>
                       
                       <div className="mt-2 text-xs text-gray-400 pl-6">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="flex items-center">
-                            <span className="bg-gray-700 px-2 py-0.5 rounded">
-                              {task.boardName} / {task.columnName}
-                            </span>
-                          </div>
-                          
-                          {task.dueDate && (
-                            <div className={`flex items-center gap-1 ${isOverdue(task.dueDate) && !task.completed ? 'text-red-400' : ''}`}>
-                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                              <span>{formatDate(task.dueDate)}</span>
-                            </div>
-                          )}
-                          
-                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${
-                              task.priority === 'high' ? 'bg-red-500' : 
-                              task.priority === 'medium' ? 'bg-amber-500' : 
-                              'bg-emerald-500'
-                            }`}></span>
-                            <span className="capitalize">{task.priority}</span>
-                          </div>
-                        </div>
-                        
-                        {/* Labels */}
+                        <TaskCardMeta task={task} />
                         {task.labels && task.labels.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
                             {task.labels.map((label, index) => (
@@ -421,7 +447,6 @@ const BacklogView = ({
                             ))}
                           </div>
                         )}
-                        
                         {task.description && (
                           <div className="mt-2 text-gray-500 line-clamp-1">
                             {task.description}

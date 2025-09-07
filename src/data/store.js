@@ -5,7 +5,179 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ydoc = new Y.Doc();
 
-const persistence = new IndexeddbPersistence('chalk-db', ydoc);
+export const safeLocalStorage = {
+  setItem: (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      if (e.name === 'QuotaExceededError') {
+        console.warn(`localStorage full, couldn't save ${key}`);
+        try {
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('chalk-backup-')) {
+              localStorage.removeItem(k);
+            }
+          }
+          localStorage.setItem(key, value);
+          return true;
+        } catch (retryError) {
+          console.error(`Still can't save ${key} after cleanup`);
+          return false;
+        }
+      }
+      return false;
+    }
+  },
+  
+  getItem: (key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn(`Couldn't read ${key} from localStorage`);
+      return null;
+    }
+  }
+};
+
+class RobustStorage {
+  constructor() {
+    this.indexedDBWorking = false;
+    this.lastBackupTime = 0;
+    this.backupInterval = 30000;
+    this._timer = null;
+  }
+
+  _writeBackupObject(obj) {
+    const json = JSON.stringify(obj);
+    const saved = safeLocalStorage.setItem('chalk-emergency-backup', json);
+    const ts = Date.now();
+    safeLocalStorage.setItem(`chalk-backup-${ts}`, json);
+    this.cleanOldBackups();
+    this.lastBackupTime = ts;
+    return saved;
+  }
+
+  async createBackup() {
+    try {
+      const full = {
+        groups: Array.from(groupsMap.entries()),
+        boards: Array.from(boardsMap.entries()),
+        columns: Array.from(columnsMap.entries()),
+        tasks: Array.from(tasksMap.entries()),
+        workspaceItems: Array.from(workspaceItemsMap.entries()),
+        timestamp: new Date().toISOString()
+      };
+
+      if (!this._writeBackupObject(full)) {
+        const smaller = {
+          groups: Array.from(groupsMap.entries()),
+          boards: Array.from(boardsMap.entries()),
+          columns: Array.from(columnsMap.entries()),
+          tasks: Array.from(tasksMap.entries()).slice(-100),
+          timestamp: new Date().toISOString()
+        };
+        this._writeBackupObject(smaller);
+      }
+    } catch (error) {
+      console.error('Backup failed:', error);
+    }
+  }
+
+  cleanOldBackups() {
+    try {
+      const backupKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('chalk-backup-')) {
+          backupKeys.push({ key, timestamp: parseInt(key.replace('chalk-backup-', '')) });
+        }
+      }
+      backupKeys.sort((a, b) => b.timestamp - a.timestamp);
+      for (let i = 3; i < backupKeys.length; i++) {
+        localStorage.removeItem(backupKeys[i].key);
+      }
+    } catch (error) {
+      console.warn('Cleanup failed:', error);
+    }
+  }
+
+  async attemptRecovery() {
+    try {
+      const emergencyBackup = localStorage.getItem('chalk-emergency-backup');
+      if (emergencyBackup) return this.restoreFromBackup(emergencyBackup);
+
+      const backupKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('chalk-backup-')) {
+          backupKeys.push({ key, timestamp: parseInt(key.replace('chalk-backup-', '')) });
+        }
+      }
+      if (backupKeys.length > 0) {
+        backupKeys.sort((a, b) => b.timestamp - a.timestamp);
+        const latestBackup = localStorage.getItem(backupKeys[0].key);
+        return this.restoreFromBackup(latestBackup);
+      }
+      return false;
+    } catch (error) {
+      console.error('Recovery failed:', error);
+      return false;
+    }
+  }
+
+  restoreFromBackup(jsonData) {
+    try {
+      const data = JSON.parse(jsonData);
+      ydoc.transact(() => {
+        groupsMap.clear();
+        boardsMap.clear();
+        columnsMap.clear();
+        tasksMap.clear();
+        workspaceItemsMap.clear();
+
+        if (data.groups) data.groups.forEach(([k, v]) => groupsMap.set(k, v));
+        if (data.boards) data.boards.forEach(([k, v]) => boardsMap.set(k, v));
+        if (data.columns) data.columns.forEach(([k, v]) => columnsMap.set(k, v));
+        if (data.tasks) data.tasks.forEach(([k, v]) => tasksMap.set(k, v));
+        if (data.workspaceItems) data.workspaceItems.forEach(([k, v]) => workspaceItemsMap.set(k, v));
+      });
+      return true;
+    } catch (error) {
+      console.error('Restore failed:', error);
+      return false;
+    }
+  }
+
+  startAutoBackup() {
+    if (this._timer) return;
+    this._timer = setInterval(() => {
+      const now = Date.now();
+      if (now - this.lastBackupTime >= this.backupInterval) {
+        this.createBackup();
+      }
+    }, 10000);
+  }
+
+  stopAutoBackup() {
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+  }
+}
+
+const robustStorage = new RobustStorage();
+
+let persistence;
+
+try {
+  persistence = new IndexeddbPersistence('chalk-db', ydoc);
+} catch (error) {
+  console.warn('IndexedDB not available, will run in memory mode');
+  persistence = null;
+}
 
 const groupsMap = ydoc.getMap('groups');
 const boardsMap = ydoc.getMap('boards');
@@ -23,114 +195,282 @@ const cacheConfig = {
   }
 };
 
-export const initializeStore = () => {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error('Database sync timed out after 15 seconds'));
-    }, 15000);
+const warnIfMemoryMode = () => {
+  if (isMemoryMode && !localStorage.getItem('memory-mode-warned')) {
+    console.warn('Running in temporary mode - changes will not be saved');
+    localStorage.setItem('memory-mode-warned', 'true');
+  }
+};
+
+let isMemoryMode = false;
+
+const initializeMemoryMode = () => {
+  isMemoryMode = true;
+    if (groupsMap.size === 0) {
+    const skipDefaults = localStorage.getItem('chalk-skip-defaults');
+    if (skipDefaults) {
+      localStorage.removeItem('chalk-skip-defaults');
+      return;
+    }
     
-    persistence.on('synced', () => {
-      clearTimeout(timeoutId);
-      console.log('Data synced with IndexedDB');
-      
-      try {
-        if (groupsMap.size === 0) {
-          console.log('Creating default data');
-          
-          const defaultGroupId = uuidv4();
-          const defaultGroup = {
-            id: defaultGroupId,
-            name: 'Personal',
-            description: 'My personal tasks',
-            createdAt: new Date().toISOString(),
-            boardIds: []
-          };
-          
-          const defaultBoardId = uuidv4();
-          const defaultBoard = {
-            id: defaultBoardId,
-            name: 'My Tasks',
-            description: 'Daily tasks tracker',
-            groupId: defaultGroupId,
-            createdAt: new Date().toISOString(),
-            columnIds: []
-          };
-          
-          const todoColumnId = uuidv4();
-          const todoColumn = {
-            id: todoColumnId,
-            name: 'To Do',
-            boardId: defaultBoardId,
-            taskIds: [],
-            order: 0
-          };
-          
-          const inProgressColumnId = uuidv4();
-          const inProgressColumn = {
-            id: inProgressColumnId,
-            name: 'In Progress',
-            boardId: defaultBoardId,
-            taskIds: [],
-            order: 1
-          };
-          
-          const doneColumnId = uuidv4();
-          const doneColumn = {
-            id: doneColumnId,
-            name: 'Done',
-            boardId: defaultBoardId,
-            taskIds: [],
-            order: 2
-          };
-          
-          defaultGroup.boardIds = [defaultBoardId];
-          defaultBoard.columnIds = [todoColumnId, inProgressColumnId, doneColumnId];
-          
-          groupsMap.set(defaultGroupId, defaultGroup);
-          boardsMap.set(defaultBoardId, defaultBoard);
-          columnsMap.set(todoColumnId, todoColumn);
-          columnsMap.set(inProgressColumnId, inProgressColumn);
-          columnsMap.set(doneColumnId, doneColumn);
-          
-          const sampleTaskId = uuidv4();
-          const sampleTask = {
-            id: sampleTaskId,
-            content: 'Welcome to Chalk! Drag this task to another column.',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            columnId: todoColumnId
-          };
-          
-          tasksMap.set(sampleTaskId, sampleTask);
-          
-          todoColumn.taskIds = [sampleTaskId];
-          columnsMap.set(todoColumnId, todoColumn);
+    const defaultGroupId = uuidv4();
+    const defaultGroup = {
+      id: defaultGroupId,
+      name: 'Personal',
+      description: 'My personal tasks',
+      createdAt: new Date().toISOString(),
+      boardIds: []
+    };
+    
+    const defaultBoardId = uuidv4();
+    const defaultBoard = {
+      id: defaultBoardId,
+      name: 'My Tasks',
+      description: 'Daily tasks tracker',
+      groupId: defaultGroupId,
+      createdAt: new Date().toISOString(),
+      columnIds: []
+    };
+    
+    const todoColumnId = uuidv4();
+    const todoColumn = {
+      id: todoColumnId,
+      name: 'To Do',
+      boardId: defaultBoardId,
+      taskIds: [],
+      order: 0
+    };
+    
+    const inProgressColumnId = uuidv4();
+    const inProgressColumn = {
+      id: inProgressColumnId,
+      name: 'In Progress',
+      boardId: defaultBoardId,
+      taskIds: [],
+      order: 1
+    };
+    
+    const doneColumnId = uuidv4();
+    const doneColumn = {
+      id: doneColumnId,
+      name: 'Done',
+      boardId: defaultBoardId,
+      taskIds: [],
+      order: 2
+    };
+    
+    defaultGroup.boardIds = [defaultBoardId];
+    defaultBoard.columnIds = [todoColumnId, inProgressColumnId, doneColumnId];
+    
+    const sampleTaskId = uuidv4();
+    const sampleTask = {
+      id: sampleTaskId,
+      content: 'Welcome to Chalk! Drag this task to another column.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      columnId: todoColumnId
+    };
+    
+    tasksMap.set(sampleTaskId, sampleTask);
+    
+    todoColumn.taskIds = [sampleTaskId];
+
+    ydoc.transact(() => {
+      groupsMap.set(defaultGroupId, defaultGroup);
+      boardsMap.set(defaultBoardId, defaultBoard);
+      columnsMap.set(todoColumnId, todoColumn);
+      columnsMap.set(inProgressColumnId, inProgressColumn);
+      columnsMap.set(doneColumnId, doneColumn);
+      tasksMap.set(sampleTaskId, sampleTask);
+    });
+
+    columnsMap.set(todoColumnId, todoColumn);
+  } else {
+
+  }
+  runDataIntegrityCheck();
+};
+
+export const initializeStore = async () => {
+  
+  const hadDataBefore = localStorage.getItem('chalk-had-data') === 'true';
+  const hasDataNow = localStorage.getItem('chalk-emergency-backup') !== null;
+  
+  if (hadDataBefore && !hasDataNow && groupsMap.size === 0) {
+    console.warn('Potential data loss detected!');
+    const recovered = await robustStorage.attemptRecovery();
+    if (recovered) {
+      localStorage.setItem('chalk-had-data', 'true');
+      robustStorage.startAutoBackup();
+      runDataIntegrityCheck();
+      return;
+    }
+  }
+
+  if (!persistence) {
+    console.warn('IndexedDB not available, using localStorage backup');
+    
+    const recovered = await robustStorage.attemptRecovery();
+    if (!recovered) {
+      initializeMemoryMode();
+    }
+    
+    robustStorage.startAutoBackup();
+    return Promise.resolve();
+  }
+  
+  return new Promise((resolve) => {
+    let attempts = 0;
+    const maxAttempts = 2;
+    
+    const tryInitialize = () => {
+      attempts++;
+      const timeoutId = setTimeout(async () => {
+        console.warn(`Database sync attempt ${attempts} timed out`);
+        if (attempts >= maxAttempts) {
+          console.warn(' IndexedDB failed, trying backup recovery...');
+          const recovered = await robustStorage.attemptRecovery();
+          if (!recovered) {
+            initializeMemoryMode();
+          }
+          robustStorage.startAutoBackup();
+          resolve();
         } else {
-          console.log('Using existing data');
+          tryInitialize();
         }
+      }, attempts === 1 ? 10000 : 5000);
+      
+      const cleanup = () => clearTimeout(timeoutId);
+      
+      persistence.once('synced', async () => {
+        cleanup();
+        robustStorage.indexedDBWorking = true;
         
-        runDataIntegrityCheck();
-        resolve();
-      } catch (error) {
-        console.error('Error setting up initial data:', error);
-        reject(error);
-      }
-    });
+        try {
+          if (groupsMap.size === 0) {
+            const skipDefaults = localStorage.getItem('chalk-skip-defaults');
+            if (skipDefaults) {
+              localStorage.removeItem('chalk-skip-defaults');
+              resolve();
+              return;
+            }
+            
+            const recovered = await robustStorage.attemptRecovery();
+            if (!recovered) {
+              createDefaultData();
+            }
+          } else {
+          }
+          
+          localStorage.setItem('chalk-had-data', 'true');
+          
+          await robustStorage.createBackup();
+          robustStorage.startAutoBackup();
+          
+          runDataIntegrityCheck();
+          resolve();
+        } catch (error) {
+          console.error('Error setting up initial data:', error);
+          const recovered = await robustStorage.attemptRecovery();
+          if (!recovered) {
+            initializeMemoryMode();
+          }
+          robustStorage.startAutoBackup();
+          resolve();
+        }
+      });
+      
+      persistence.once('error', async (error) => {
+        cleanup();
+        if (attempts >= maxAttempts) {
+          const recovered = await robustStorage.attemptRecovery();
+          if (!recovered) {
+            initializeMemoryMode();
+          }
+          robustStorage.startAutoBackup();
+          resolve();
+        } else {
+          setTimeout(tryInitialize, 1000);
+        }
+      });
+    };
     
-    persistence.on('error', (error) => {
-      clearTimeout(timeoutId);
-      console.error('IndexedDB sync error:', error);
-      reject(error);
-    });
+    tryInitialize();
   });
 };
 
+function createDefaultData() {
+  const defaultGroupId = uuidv4();
+  const defaultGroup = {
+    id: defaultGroupId,
+    name: 'Personal',
+    description: 'My personal tasks',
+    createdAt: new Date().toISOString(),
+    boardIds: []
+  };
+  
+  const defaultBoardId = uuidv4();
+  const defaultBoard = {
+    id: defaultBoardId,
+    name: 'My Tasks',
+    description: 'Daily tasks tracker',
+    groupId: defaultGroupId,
+    createdAt: new Date().toISOString(),
+    columnIds: []
+  };
+  
+  const todoColumnId = uuidv4();
+  const todoColumn = {
+    id: todoColumnId,
+    name: 'To Do',
+    boardId: defaultBoardId,
+    taskIds: [],
+    order: 0
+  };
+  
+  const inProgressColumnId = uuidv4();
+  const inProgressColumn = {
+    id: inProgressColumnId,
+    name: 'In Progress',
+    boardId: defaultBoardId,
+    taskIds: [],
+    order: 1
+  };
+  
+  const doneColumnId = uuidv4();
+  const doneColumn = {
+    id: doneColumnId,
+    name: 'Done',
+    boardId: defaultBoardId,
+    taskIds: [],
+    order: 2
+  };
+  
+  defaultGroup.boardIds = [defaultBoardId];
+  defaultBoard.columnIds = [todoColumnId, inProgressColumnId, doneColumnId];
+  
+  const sampleTaskId = uuidv4();
+  const sampleTask = {
+    id: sampleTaskId,
+    content: 'Welcome to Chalk! Drag this task to another column.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    columnId: todoColumnId
+  };
+  
+  tasksMap.set(sampleTaskId, sampleTask);
+  
+  todoColumn.taskIds = [sampleTaskId];
 
-const WorkspaceItemTypes = {
-  NOTE: 'note',
-  LINK: 'link',
-  FILE_REFERENCE: 'file'
-};
+  ydoc.transact(() => {
+    groupsMap.set(defaultGroupId, defaultGroup);
+    boardsMap.set(defaultBoardId, defaultBoard);
+    columnsMap.set(todoColumnId, todoColumn);
+    columnsMap.set(inProgressColumnId, inProgressColumn);
+    columnsMap.set(doneColumnId, doneColumn);
+    tasksMap.set(sampleTaskId, sampleTask);
+  });
+}
 
 export const createWorkspaceItem = (boardId, type, content, metadata = {}) => {
   const id = uuidv4();
@@ -175,6 +515,7 @@ export const deleteWorkspaceItem = (id) => {
 
 
 export const createGroup = (name, description = '') => {
+  warnIfMemoryMode();
   const id = uuidv4();
   const group = {
     id,
@@ -223,6 +564,7 @@ export const deleteGroup = (id) => {
 
 
 export const createBoard = (groupId, name, description = '') => {
+    warnIfMemoryMode();
   const group = groupsMap.get(groupId);
   if (!group) return null;
   
@@ -265,11 +607,14 @@ export const createBoard = (groupId, name, description = '') => {
   
   board.columnIds = [todoColumnId, inProgressColumnId, doneColumnId];
   
-  boardsMap.set(id, board);
-  columnsMap.set(todoColumnId, todoColumn);
-  columnsMap.set(inProgressColumnId, inProgressColumn);
-  columnsMap.set(doneColumnId, doneColumn);
-  
+  ydoc.transact(() => {
+    boardsMap.set(id, board);
+    columnsMap.set(todoColumnId, todoColumn);
+    columnsMap.set(inProgressColumnId, inProgressColumn);
+    columnsMap.set(doneColumnId, doneColumn);
+    groupsMap.set(groupId, updatedGroup);
+  });
+
   const updatedGroup = { ...group };
   if (!updatedGroup.boardIds) {
     updatedGroup.boardIds = [];
@@ -334,6 +679,8 @@ export const deleteBoard = (id) => {
   }
   
   boardsMap.delete(id);
+  invalidateCache('group', board.groupId);
+  invalidateCache('board', id);
   return true;
 };
 
@@ -359,7 +706,8 @@ export const createColumn = (boardId, name) => {
   }
   updatedBoard.columnIds.push(id);
   boardsMap.set(boardId, updatedBoard);
-  
+  invalidateCache('board', boardId);
+
   return id;
 };
 
@@ -407,6 +755,7 @@ export const updateColumn = (id, updates) => {
   
   const updatedColumn = { ...column, ...updates };
   columnsMap.set(id, updatedColumn);
+  invalidateCache('board', column.boardId);
   return true;
 };
 
@@ -428,10 +777,13 @@ export const deleteColumn = (id) => {
   }
   
   columnsMap.delete(id);
+  if (board) invalidateCache('board', board.id);
+
   return true;
 };
 
 export const createTask = (columnId, content, details = {}) => {
+  warnIfMemoryMode();
   if (!columnId) {
     console.error('Create task failed: Missing column ID');
     return null;
@@ -454,7 +806,7 @@ export const createTask = (columnId, content, details = {}) => {
     id = uuidv4();
   }
   
-  const columnName = column.name.trim().toLowerCase();
+  const columnName = (column.name || '').toString().trim().toLowerCase();
   const isInDone = columnName === 'done' || columnName === 'completed' || columnName === 'finished';
   const isInProgress = columnName === 'in progress' || columnName === 'doing' || columnName === 'working' || columnName === 'started';
   const isInTodo = columnName === 'to do' || columnName === 'todo' || columnName === 'backlog' || columnName === 'planned';
@@ -521,6 +873,8 @@ export const createTask = (columnId, content, details = {}) => {
       }
     });
     
+    setTimeout(() => robustStorage.createBackup(), 1000);
+
     return id;
   } catch (error) {
     console.error('Error creating task:', error);
@@ -576,6 +930,9 @@ export const updateTask = (id, updates) => {
     updatedAt: new Date().toISOString()
   };
   tasksMap.set(id, updatedTask);
+  
+  setTimeout(() => robustStorage.createBackup(), 1000);
+
   return true;
 };
 
@@ -613,7 +970,7 @@ export const deleteTask = (id) => {
       tasksMap.delete(id);
     });
     
-    console.log(`Task ${id} deleted successfully`);
+    setTimeout(() => robustStorage.createBackup(), 1000);
     return true;
   } catch (error) {
     console.error('Error deleting task:', error);
@@ -747,6 +1104,10 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
       timeInColumns[sourceColumnId] = (timeInColumns[sourceColumnId] || 0) + timeSpentMs;
       updatedTask.timeInColumns = timeInColumns;
       updatedTask.lastColumnChange = now;
+      updatedTask.movementHistory = [
+       ...(updatedTask.movementHistory || []),
+        { from: sourceColumnId, to: destinationColumnId, timestamp: now }
+      ];
     }
     
     try {
@@ -764,7 +1125,8 @@ export const moveTask = (taskId, sourceColumnId, destinationColumnId, sourceInde
         tasksMap.set(taskId, updatedTask);
       });
       
-      console.log(`Task ${taskId} moved to "${destinationColumn.name}", completed = ${updatedTask.completed}, percentComplete = ${updatedTask.percentComplete}`);
+      setTimeout(() => robustStorage.createBackup(), 1000);
+
       return true;
     } catch (transactionError) {
       console.error('Transaction failed while moving task:', transactionError);
@@ -937,7 +1299,6 @@ export const getBoardAnalytics = (boardId) => {
 };
 
 export const runDataIntegrityCheck = () => {
-  console.log("Running data integrity check...");
   let fixedIssues = 0;
   
   try {
@@ -990,12 +1351,66 @@ export const runDataIntegrityCheck = () => {
         });
       }
     });
-    
-    console.log(`Data integrity check completed: ${fixedIssues} issues fixed`);
     return fixedIssues;
   } catch (error) {
     console.error("Error during data integrity check:", error);
     return -1;
+  }
+};
+
+export const getStorageStatus = () => ({
+  isMemoryMode,
+  hasPersistence: !!persistence
+});
+
+export const clearDatabase = async () => {
+  try {
+ 
+    localStorage.setItem('chalk-skip-defaults', 'true');
+    
+    groupsMap.clear();
+    boardsMap.clear();
+    columnsMap.clear();
+    tasksMap.clear();
+    workspaceItemsMap.clear();
+    
+    if (persistence) {
+      persistence.destroy();
+    }
+    
+    ydoc.destroy();
+    
+    await new Promise((resolve) => {
+      const deleteReq = indexedDB.deleteDatabase('chalk-db');
+      deleteReq.onerror = () => {
+        console.error('IndexedDB delete failed:', deleteReq.error);
+        resolve();
+      };
+      deleteReq.onsuccess = () => {
+        resolve();
+      };
+      deleteReq.onblocked = () => {
+        console.warn('IndexedDB delete blocked');
+        setTimeout(() => resolve(), 2000);
+      };
+    });
+    
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    localStorage.setItem('chalk-skip-defaults', 'true');
+
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    window.location.href = window.location.href;
+    
+    return true;
+  } catch (error) {
+    console.error('CLEAR FAILED WITH ERROR:', error);
+    
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    window.location.href = window.location.href;
+    return false;
   }
 };
 
@@ -1017,4 +1432,5 @@ export const subscribeToChanges = (callback) => {
   };
 };
 
+export const getPersistence = () => persistence;
 export { ydoc, persistence };

@@ -1,6 +1,5 @@
 
 /* src/metallicStyles.css */
-/* Metallic backgrounds and effects */
 
 :root {
   --neon-primary: #8b5cf6;    /* Purple */
@@ -40,7 +39,6 @@
     opacity: 0.3;
   }
   
-  /* Metallic workspace cards */
   .card-metallic {
     background: linear-gradient(145deg, #1f2937 0%, #111827 100%);
     position: relative;
@@ -99,7 +97,6 @@
     z-index: 2;
   }
   
-  /* Neon borders for workspace cards */
   .neon-border-effect {
     position: relative;
     border-radius: 0.5rem;
@@ -175,7 +172,6 @@
     background-clip: text;
   }
   
-  /* Metallic buttons */
   .btn-metallic {
     background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%);
     position: relative;
@@ -261,13 +257,7 @@
       var(--neon-primary) 0%,
       var(--neon-accent) 100%
     );
-    /* -webkit-mask: 
-      linear-gradient(#fff 0 0) content-box, 
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0.5;
-    transition: opacity 0.3s ease;*/
+
   }
   
   .btn-glow-outline:hover::before {
@@ -291,7 +281,7 @@
     opacity: 0.3;
   }
   
-  .counter-neon {
+  /* .counter-neon {
     background: linear-gradient(
       90deg,
       var(--neon-secondary) 0%,
@@ -319,4 +309,4 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-  }
+  } */

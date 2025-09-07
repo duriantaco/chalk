@@ -8,10 +8,10 @@ const Sidebar = ({
   onDeleteGroup,
   currentTheme,
   onThemeChange,
+  onShowHome,
   onShowDashboard,
   onShowAchievements,
   onShowSearch,
-  onShowGraph,
   onShowSettings,
   onShowBacklog
 }) => {
@@ -22,6 +22,12 @@ const Sidebar = ({
   const [groupToDelete, setGroupToDelete] = useState(null);
   const [activeIcon, setActiveIcon] = useState('dashboard');
   
+ const goHome = () => {
+    setActiveIcon('home');
+    onSelectGroup?.(null);
+    onShowHome?.();
+  };
+
   const handleCreateGroup = () => {
     if (newGroupName.trim()) {
       onCreateGroup(newGroupName.trim());
@@ -71,8 +77,18 @@ const Sidebar = ({
     <div className="flex h-screen relative z-10">
       <div className="w-10 sm:w-12 h-screen bg-gray-900 flex flex-col items-center py-3 theme-sidebar">
         <div className="mb-6 text-xl font-bold">
-          <span className="bg-gradient-to-r from-purple-400 to-indigo-500 text-transparent bg-clip-text">C</span>
+          <button
+            onClick={goHome}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && goHome()}
+            aria-label="Home"
+            title="Home"
+            className="focus:outline-none"
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          >
+            <span className="bg-gradient-to-r from-purple-400 to-indigo-500 text-transparent bg-clip-text">C</span>
+          </button>
         </div>
+
         
         <div className="flex flex-col items-center space-y-4">
           <button 
@@ -118,21 +134,7 @@ const Sidebar = ({
               <path d="M11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" />
             </svg>
           </button>
-          
-          <button 
-            onClick={() => handleIconClick('graph', onShowGraph)}
-            className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
-              activeIcon === 'graph'
-                ? 'bg-gray-800 text-white'
-                : 'hover:bg-gray-800 text-gray-400 hover:text-white'
-            }`}
-            title="Project Graph"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-            </svg>
-          </button>
-          
+
           <button 
             onClick={() => handleIconClick('achievements', onShowAchievements)}
             className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${

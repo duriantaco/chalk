@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeLocalStorage } from '../data/store';
 
 const HabitTracker = ({ 
   groups, 
@@ -119,7 +120,8 @@ const HabitTracker = ({
   };
   
   const calculateNextReminderTime = () => {
-    if (!notificationsEnabled) return;
+    if (!notificationsEnabled) 
+      return;
     
     const now = new Date();
     const [hours, minutes] = notificationTime.split(':').map(Number);
@@ -144,7 +146,8 @@ const HabitTracker = ({
   };
   
   const sendDailyReminder = () => {
-    if (!notificationsEnabled || Notification.permission !== 'granted') return;
+    if (!notificationsEnabled || Notification.permission !== 'granted') 
+      return;
     
     const today = new Date().toISOString().split('T')[0];
     const todayData = activityData.find(day => day.date.toISOString().split('T')[0] === today);
@@ -178,7 +181,8 @@ const HabitTracker = ({
   };
   
   const sendStreakAlert = () => {
-    if (!notificationsEnabled || Notification.permission !== 'granted') return;
+    if (!notificationsEnabled || Notification.permission !== 'granted') 
+      return;
     
     try {
       new Notification("Streak Alert!", {
@@ -192,7 +196,7 @@ const HabitTracker = ({
   
   const saveNotificationPreferences = () => {
     try {
-      localStorage.setItem('habitNotificationPrefs', JSON.stringify({
+      safeLocalStorage.setItem('habitNotificationPrefs', JSON.stringify({
         enabled: notificationsEnabled,
         time: notificationTime
       }));
@@ -394,18 +398,28 @@ const HabitTracker = ({
   }, [groups, getBoards, getColumns, getTasks, selectedTimeRange]);
 
   const getActivityColor = (count) => {
-    if (count === 0) return 'bg-gray-800'; 
-    if (count >= 10) return 'bg-green-700 animate-pulse-slow'; 
-    if (count >= 5) return 'bg-green-600'; 
-    if (count >= 3) return 'bg-green-500'; 
+    if (count === 0) 
+      return 'bg-gray-800'; 
+    if (count >= 10) 
+      return 'bg-green-700 animate-pulse-slow'; 
+    if (count >= 5) 
+      return 'bg-green-600'; 
+    if (count >= 3) 
+      return 'bg-green-500'; 
+    
     return 'bg-green-400';                
   };
   
   const getStreakClass = (streak) => {
-    if (streak === 0) return 'text-gray-500';
-    if (streak < 3) return 'text-emerald-400';
-    if (streak < 7) return 'text-emerald-500';
-    if (streak < 14) return 'text-emerald-300 font-bold';
+    if (streak === 0) 
+      return 'text-gray-500';
+    if (streak < 3) 
+      return 'text-emerald-400';
+    if (streak < 7) 
+      return 'text-emerald-500';
+    if (streak < 14) 
+      return 'text-emerald-300 font-bold';
+
     return 'text-emerald-300 font-bold animate-fire'; 
   };
 

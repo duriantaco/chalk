@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
-import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { SortableContext, useSortable, sortableKeyboardCoordinates, 
+  verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { DndContext, DragOverlay, useSensors, useSensor, PointerSensor, KeyboardSensor, useDroppable, pointerWithin } from '@dnd-kit/core';
+import { DndContext, DragOverlay, useSensors, 
+  useSensor, PointerSensor, KeyboardSensor, 
+  useDroppable, pointerWithin } from '@dnd-kit/core';
+import TaskModal from './TaskModal';
 
-const TaskCard = memo(({ task, onClick, isDragging = false }) => {
+const TaskCard = memo(({ task, onClick, isDragging = false  }) => {
   const priorityColors = {
     high: 'border-red-500',
     medium: 'border-amber-500',
@@ -33,7 +37,7 @@ const TaskCard = memo(({ task, onClick, isDragging = false }) => {
     <div
       className={`bg-gray-750 rounded-md border-l-4 ${priorityColor} ${
         task.completed ? 'opacity-60' : ''} ${
-        isDragging ? 'shadow-lg scale-105' : ''} 
+        isDragging ? 'shadow-lg scale-105' : ''}
         transition-all duration-200 cursor-grab px-3 py-3 w-full
         hover:bg-gray-700 hover:-translate-y-0.5 
         shadow-md shadow-black/50 hover:shadow-lg
@@ -43,9 +47,27 @@ const TaskCard = memo(({ task, onClick, isDragging = false }) => {
       data-task-id={task.id}
     >
       <div className="flex flex-col">
-        <div className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-white'}`}>
-          {task.content}
-        </div>
+        <div className={`flex items-center gap-2 font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-white'}`}>
+          <span>{task.content}</span>
+            {!task.completed && task.forceOverdue && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/40 uppercase tracking-wide">
+                overdue
+              </span>
+            )}
+          </div>
+
+
+        {Array.isArray(task.attachments) && task.attachments.length > 0 && (
+          <div className="mt-2 border border-gray-800 rounded overflow-hidden">
+            <img
+              src={task.attachments[0].url || `file://${(task.attachments[0].path || '').replace(/\\/g,'/')}`}
+              alt=""
+              className="w-full h-24 object-cover"
+              draggable={false}
+              onError={e => (e.currentTarget.style.display = 'none')}
+            />
+          </div>
+        )}
 
         {task.columnStatus === 'in-progress' && percentComplete > 0 && (
           <div className="mt-2">
@@ -141,6 +163,15 @@ const SortableTaskCard = memo(({ task, onClick }) => {
       className="touch-none w-full"
       {...attributes}
       {...listeners}
+      data-task-id={task.id}
+
+      onDragOverCapture={(e) => {
+        if (e.dataTransfer?.types?.includes('Files')) 
+          e.preventDefault();
+        if (e.dataTransfer?.types?.includes('Files'))
+          e.stopPropagation();
+      }}
+
     >
       <TaskCard
         task={task}
@@ -151,10 +182,7 @@ const SortableTaskCard = memo(({ task, onClick }) => {
   );
 });
 
-const Column = memo(({ column, tasks, onTaskClick, onAddTask }) => {
-  const [isAddingTask, setIsAddingTask] = useState(false);
-  const [newTaskContent, setNewTaskContent] = useState('');
-  const inputRef = useRef(null);
+const Column = memo(({ column, tasks, onTaskClick, onOpenCreate }) => {
 
   const { setNodeRef: setDroppableNodeRef } = useDroppable({
     id: column.id,
@@ -163,38 +191,6 @@ const Column = memo(({ column, tasks, onTaskClick, onAddTask }) => {
       column
     }
   });
-
-  useEffect(() => {
-    if (isAddingTask && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isAddingTask]);
-
-  const handleAddClick = () => {
-    setIsAddingTask(true);
-  };
-
-  const handleCreateTask = () => {
-    if (newTaskContent.trim()) {
-      onAddTask(column.id, newTaskContent);
-      setNewTaskContent('');
-      setIsAddingTask(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setNewTaskContent('');
-    setIsAddingTask(false);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleCreateTask();
-    } else if (e.key === 'Escape') {
-      handleCancel();
-    }
-  };
 
   const taskIds = tasks.map(t => t.id);
 
@@ -226,9 +222,10 @@ const Column = memo(({ column, tasks, onTaskClick, onAddTask }) => {
               onClick={() => onTaskClick(task.id)}
             />
           ))}
+
         </SortableContext>
 
-        {tasks.length === 0 && !isAddingTask && (
+        {tasks.length === 0 && (
           <div className="flex items-center justify-center h-24 border border-dashed border-gray-700 rounded-md m-1">
             <p className="text-gray-500 text-sm">Drop tasks here</p>
           </div>
@@ -236,55 +233,79 @@ const Column = memo(({ column, tasks, onTaskClick, onAddTask }) => {
       </div>
 
       <div className="p-3 border-t border-gray-700 flex-shrink-0">
-        {!isAddingTask ? (
-          <button
-            className="w-full flex items-center justify-center gap-2 text-gray-400 hover:text-white py-2 px-3 bg-gray-700 bg-opacity-50 hover:bg-opacity-70 rounded-md transition-colors"
-            onClick={handleAddClick}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span>Add task</span>
-          </button>
-        ) : (
-          <div className="p-3 bg-gray-900 rounded-md border border-gray-700">
-            <textarea
-              ref={inputRef}
-              value={newTaskContent}
-              onChange={(e) => setNewTaskContent(e.target.value)}
-              placeholder="What needs to be done?"
-              onKeyDown={handleKeyDown}
-              rows="3"
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-            />
-            <div className="flex justify-end gap-2 mt-2">
-              <button
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none transition-colors"
-                onClick={handleCreateTask}
-                disabled={!newTaskContent.trim()}
-              >
-                Add
-              </button>
-              <button
-                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
-                onClick={handleCancel}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+        <button
+          className="w-full flex items-center justify-center gap-2 text-gray-400 hover:text-white py-2 px-3 bg-gray-700 bg-opacity-50 hover:bg-opacity-70 rounded-md transition-colors"
+          onClick={() => onOpenCreate(column.id)}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span>Add task</span>
+        </button>
       </div>
     </div>
   );
 });
 
-const TaskDetailModal = ({ task, onClose, onUpdate, onDelete }) => {
-  const [editedTask, setEditedTask] = useState({ ...task });
+const TaskEditModal = ({ mode, task, columnId, onClose, onCreate, onUpdate, onDelete }) => {
+  const [editedTask, setEditedTask] = useState(() => ({
+    ...(task || {}),
+    content: task?.content || '',
+    description: task?.description || '',
+    priority: task?.priority || 'normal',
+    dueDate: task?.dueDate || '',
+    assignedTo: task?.assignedTo || '',
+    labels: Array.isArray(task?.labels) ? task.labels : [],
+    percentComplete: task?.percentComplete || 0,
+    completed: task?.completed || false,
+  }));
+  const [attachments, setAttachments] = useState(Array.isArray(task?.attachments) ? task.attachments : []);
+  const [attaching, setAttaching] = useState(false);
 
   useEffect(() => {
-    setEditedTask({ ...task });
-  }, [task]);
+    if (task) {
+      setEditedTask({
+        ...task,
+        content: task.content || '',
+        description: task.description || '',
+        priority: task.priority || 'normal',
+        dueDate: task.dueDate || '',
+        assignedTo: task.assignedTo || '',
+        labels: Array.isArray(task.labels) ? task.labels : [],
+        percentComplete: task.percentComplete || 0,
+        completed: task.completed || false,
+      });
+      setAttachments(Array.isArray(task.attachments) ? task.attachments : []);
+    } else if (mode === 'create') {
+      setEditedTask({
+        content: '',
+        description: '',
+        priority: 'normal',
+        dueDate: '',
+        assignedTo: '',
+        labels: [],
+        percentComplete: 0,
+        completed: false,
+      });
+      setAttachments([]);
+    }
+  }, [task, mode]);
+
+  const addByPicker = async () => {
+    try {
+      setAttaching(true);
+      const picked = await window.api.invoke('attachments:chooseAndCopy');
+      if (Array.isArray(picked) && picked.length) setAttachments(prev => [...prev, ...picked]);
+    } catch (e) {
+      console.error('chooseAndCopy failed', e);
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  const removeAttachment = (id) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
 
   const handleChange = (field, value) => {
     setEditedTask(prev => ({
@@ -293,29 +314,43 @@ const TaskDetailModal = ({ task, onClose, onUpdate, onDelete }) => {
     }));
   };
 
-  const handleSave = () => {
-    onUpdate(editedTask);
-    onClose();
-  };
+  const handleSave = async () => {
+    const { id, content, ...rest } = editedTask;
+    const details = {
+      ...rest,
+      attachments,
+      labels: Array.isArray(editedTask.labels) ? editedTask.labels : [],
+    };
 
-  const handleDelete = () => {
-    if (window.confirm("Are you sure you want to delete this task?")) {
-      onDelete(task.id);
+    if (mode === 'create') {
+      if (!content.trim() || !columnId) 
+        return;
+
+      const newId = await onCreate(columnId, { content, details });
+      if (newId) onClose(); 
+    } else {
+      await onUpdate(id, { ...details, content });
       onClose();
     }
   };
 
-  if (!task) return null;
+  const handleDelete = async () => {
+    if (mode === 'edit' && task?.id) {
+      if (window.confirm("Are you sure you want to delete this task?")) {
+        await onDelete(task.id);
+        onClose();
+      }
+    }
+  };
+
+  const titleText = mode === 'create' ? 'New Task' : 'Edit Task';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm">
       <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-bold text-white">Task Details</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white"
-          >
+          <h3 className="text-xl font-bold text-white">{titleText}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -330,6 +365,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate, onDelete }) => {
               onChange={(e) => handleChange('content', e.target.value)}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
               rows="2"
+              placeholder="What needs to be done?"
             />
           </div>
 
@@ -366,6 +402,57 @@ const TaskDetailModal = ({ task, onClose, onUpdate, onDelete }) => {
               onChange={(e) => handleChange('dueDate', e.target.value)}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
+          </div>
+
+          <div className="mt-2 rounded-md border border-gray-700">
+            <div className="flex items-center justify-between p-2">
+              <label className="text-sm font-medium text-gray-400">Attachments</label>
+              <div className="flex items-center gap-2">
+                {attaching && (
+                  <span className="text-xs text-gray-300 flex items-center gap-1">
+                    <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                    Attaching…
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={addByPicker}
+                  className="px-2.5 py-1 text-xs rounded bg-sky-700 hover:bg-sky-600 text-white"
+                >
+                  Add images…
+                </button>
+              </div>
+            </div>
+
+            {attachments.length === 0 ? (
+              <div className="text-xs text-gray-500 bg-gray-900/50 border-t border-dashed border-gray-700 rounded-b-md p-3">
+                Drop images here or click “Add images…”
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 p-2">
+                {attachments.map(att => (
+                  <div key={att.id} className="relative group border border-gray-700 rounded overflow-hidden bg-gray-900">
+                    <img
+                      src={att.url || `file://${(att.path || '').replace(/\\/g,'/')}`}
+                      alt=""
+                      className="w-full h-24 object-cover"
+                      draggable={false}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(att.id)}
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs px-1.5 py-0.5 rounded bg-red-700/80 text-white"
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {editedTask.columnStatus === 'in-progress' && (
@@ -410,34 +497,130 @@ const TaskDetailModal = ({ task, onClose, onUpdate, onDelete }) => {
             <label className="block text-sm font-medium text-gray-400 mb-1">Labels (comma-separated)</label>
             <input
               type="text"
-              value={editedTask.labels?.join(', ') || ''}
-              onChange={(e) => handleChange('labels', e.target.value.split(',').map(l => l.trim()).filter(l => l))}
+              value={Array.isArray(editedTask.labels) ? editedTask.labels.join(', ') : ''}
+              onChange={(e) => handleChange('labels', e.target.value.split(',').map(l => l.trim()).filter(Boolean))}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="e.g., Frontend, Bug"
             />
           </div>
 
           <div className="flex justify-between pt-4 border-t border-gray-700">
-            <button
-              onClick={handleDelete}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md focus:outline-none transition-colors"
-            >
-              Delete Task
-            </button>
+            {mode === 'edit' ? (
+              <button onClick={handleDelete} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md focus:outline-none transition-colors">
+                Delete Task
+              </button>
+            ) : <span />}
 
             <div className="flex gap-2">
-              <button
-                onClick={onClose}
-                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors"
-              >
+              <button onClick={onClose} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md focus:outline-none transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={handleSave}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none transition-colors"
-              >
-                Save Changes
+              <button onClick={handleSave} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none transition-colors">
+                Save
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+const TaskViewModal = ({ task, onClose, onEdit }) => {
+  if (!task) 
+    return null;
+
+  const isOverdue = (() => {
+    if (!task.dueDate || task.completed) 
+      return false;
+
+    const t = new Date(); t.setHours(0,0,0,0);
+    const d = new Date(task.dueDate); d.setHours(0,0,0,0);
+    return d < t;
+  })();
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center backdrop-blur-sm">
+      <div className="bg-gray-850 border border-gray-700 rounded-2xl w-[720px] max-w-[95vw] max-h-[85vh] overflow-y-auto shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700 sticky top-0 bg-gray-850/90">
+          <div className="text-lg font-semibold text-white">Task</div>
+          <div className="flex gap-2">
+            <button className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-md text-white" onClick={onEdit}>Edit</button>
+            <button className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-md text-gray-200" onClick={onClose}>Close</button>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div>
+            <div className={`text-xl font-bold ${task.completed ? 'line-through text-gray-400' : 'text-white'}`}>
+              {task.content}
+            </div>
+            {task.labels?.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {task.labels.map((l, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">{l}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {Array.isArray(task.attachments) && task.attachments.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {task.attachments.map(att => (
+                <div key={att.id} className="border border-gray-700 rounded overflow-hidden bg-gray-900">
+                  <img
+                    src={att.url || `file://${(att.path || '').replace(/\\/g,'/')}`}
+                    alt=""
+                    className="w-full h-28 object-cover"
+                    draggable={false}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-start gap-4">
+            <div className="text-gray-400 text-sm w-32 shrink-0">Status</div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">
+                {task.columnStatus || '—'}
+              </span>
+              {task.columnStatus === 'in-progress' && typeof task.percentComplete === 'number' && (
+                <>
+                  <div className="w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${task.percentComplete === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                      style={{ width: `${task.percentComplete}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400">{task.percentComplete}%</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-4">
+            <div className="text-gray-400 text-sm w-32 shrink-0">Priority</div>
+            <div className="text-gray-200">{task.priority ?? 'normal'}</div>
+          </div>
+
+          <div className="flex items-start gap-4">
+            <div className="text-gray-400 text-sm w-32 shrink-0">Due date</div>
+            <div className={`${isOverdue ? 'text-red-400' : 'text-gray-200'}`}>
+              {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-4">
+            <div className="text-gray-400 text-sm w-32 shrink-0">Assigned to</div>
+            <div className="text-gray-200">{task.assignedTo || '—'}</div>
+          </div>
+
+          <div className="flex items-start gap-4">
+            <div className="text-gray-400 text-sm w-32 shrink-0">Description</div>
+            <div className="prose prose-invert max-w-none text-gray-200 whitespace-pre-wrap">
+              {task.description || '—'}
             </div>
           </div>
         </div>
@@ -527,69 +710,51 @@ const AddColumn = ({ onAddColumn }) => {
   );
 };
 
-const KanbanBoard = () => {
-  const [columns, setColumns] = useState([
-    { id: 'todo', name: 'To Do' },
-    { id: 'in-progress', name: 'In Progress' },
-    { id: 'done', name: 'Done' }
-  ]);
-
-  const [tasks, setTasks] = useState({
-    'todo': [
-      {
-        id: 'task-1',
-        content: 'Research competing products',
-        priority: 'high',
-        columnStatus: 'todo',
-        dueDate: '2025-04-15',
-        labels: ['Research'],
-        description: 'Analyze features, pricing, and UX of top 3 competitors.'
-      },
-      {
-        id: 'task-2',
-        content: 'Create initial mockups',
-        priority: 'medium',
-        columnStatus: 'todo',
-        labels: ['Design', 'UX'],
-        assignedTo: 'Alex'
-      }
-    ],
-    'in-progress': [
-      {
-        id: 'task-3',
-        content: 'Implement drag and drop functionality',
-        priority: 'medium',
-        columnStatus: 'in-progress',
-        percentComplete: 65,
-        labels: ['Frontend', 'React'],
-        assignedTo: 'Mike',
-        description: 'Use dnd-kit library for core functionality.'
-      }
-    ],
-    'done': [
-      {
-        id: 'task-4',
-        content: 'Set up project repository',
-        priority: 'low',
-        columnStatus: 'done',
-        completed: true,
-        labels: ['Setup'],
-        dueDate: '2024-07-01'
-      }
-    ]
-  });
-
+const BoardView = ({ 
+  board, 
+  columns,
+  getTasks,
+  onCreateTask,
+  onUpdateTask,
+  onDeleteTask,
+  onMoveTask,
+  onCreateColumn,
+  onBack,
+  autoFocusTask,
+  onConsumedFocus 
+}) => {
   const [activeTaskId, setActiveTaskId] = useState(null);
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [modal, setModal] = useState({ open: false, mode: null, taskId: null, columnId: null });
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 300);
+    if (!autoFocusTask?.taskId) 
+      return;
 
-    return () => clearTimeout(timer);
-  }, []);
+    let tries = 0;
+    const focusIt = () => {
+      const sel = `[data-task-id="${autoFocusTask.taskId}"]`;
+      const el = document.querySelector(sel);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+
+        el.classList.add('ring-2', 'ring-indigo-500', 'animate-pulse');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-indigo-500', 'animate-pulse');
+        }, 1400);
+
+        if (autoFocusTask.openModal) {
+          setModal({ open: true, mode: 'view', taskId: autoFocusTask.taskId, columnId: null });
+        }
+        onConsumedFocus?.();
+      } else if (tries < 12) {
+        tries += 1;
+        requestAnimationFrame(focusIt);
+      }
+    };
+
+    focusIt();
+  }, [autoFocusTask]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -603,12 +768,44 @@ const KanbanBoard = () => {
   );
 
   const getTaskById = (taskId) => {
-    for (const columnId in tasks) {
-      const task = tasks[columnId]?.find(t => t.id === taskId);
-      if (task) return task;
-    }
-    return null;
+  for (const column of columns) {
+    const t = getTasks(column.id).find(t => t.id === taskId);
+    if (t) 
+      return t;
+  }
+  return null;
+};
+
+  const handleTaskClick = (taskId) => {
+    setModal({ open: true, mode: 'view', taskId, columnId: null });
   };
+
+  const handleOpenCreate = (columnId) => {
+    setModal({ open: true, mode: 'create', taskId: null, columnId });
+  };
+
+  const closeModal = () => setModal({ open: false, mode: null, taskId: null, columnId: null });
+
+  const switchModal = (nextMode, idMaybe) => {
+    if (nextMode === 'edit') {
+      setModal(m => ({ ...m, mode: 'edit' }));
+    } else {
+      const tid = idMaybe ?? modal.taskId;
+      setModal({ open: true, mode: 'view', taskId: tid, columnId: null });
+    }
+  };
+
+  const createTaskWithDetails = async (columnId, { content, details }) => {
+    const id = await onCreateTask(columnId, content);
+    if (id) await onUpdateTask(id, details);
+    return id;
+  };
+
+  const deleteAndClose = async (taskId) => {
+    await onDeleteTask(taskId);
+    closeModal();
+  };
+
 
   const handleDragStart = (event) => {
     const { active } = event;
@@ -619,232 +816,172 @@ const KanbanBoard = () => {
     const { active, over } = event;
     setActiveTaskId(null);
     
-    if (!over || !active) return;
+    if (!over || !active) 
+      return;
     
     const activeId = active.id;
     const overId = over.id;
     
-    if (activeId === overId) return;
+    if (activeId === overId) 
+      return;
     
     let sourceColumnId = null;
     let sourceTask = null;
     
-    for (const colId in tasks) {
-      const task = tasks[colId]?.find(t => t.id === activeId);
+    for (const column of columns) {
+      const tasks = getTasks(column.id);
+      const task = tasks.find(t => t.id === activeId);
       if (task) {
-        sourceColumnId = colId;
+        sourceColumnId = column.id;
         sourceTask = task;
         break;
       }
     }
     
-    if (!sourceColumnId || !sourceTask) return;
+    if (!sourceColumnId || !sourceTask) 
+      return;
     
     let targetColumnId = null;
     
     if (columns.some(col => col.id === overId)) {
       targetColumnId = overId;
     } else {
-      for (const colId in tasks) {
-        if (tasks[colId]?.some(t => t.id === overId)) {
-          targetColumnId = colId;
+      for (const column of columns) {
+        const tasks = getTasks(column.id);
+        if (tasks.some(t => t.id === overId)) {
+          targetColumnId = column.id;
           break;
         }
       }
     }
     
-    if (!targetColumnId) return;
+    if (!targetColumnId) 
+      return;
     
-    setTasks(prevTasks => {
-      const newTasks = { ...prevTasks };
-      
-      newTasks[sourceColumnId] = prevTasks[sourceColumnId].filter(t => t.id !== activeId);
-      
-      const updatedTask = {
-        ...sourceTask,
-        columnStatus: targetColumnId,
-        completed: targetColumnId === 'done'
-      };
-      
-      if (!newTasks[targetColumnId]) {
-        newTasks[targetColumnId] = [];
+    const sourceTasks = getTasks(sourceColumnId);
+    const sourceIndex = sourceTasks.findIndex(t => t.id === activeId);
+    
+    const targetTasks = getTasks(targetColumnId);
+    let destinationIndex = targetTasks.length;
+    
+    if (overId !== targetColumnId) {
+      const overTaskIndex = targetTasks.findIndex(t => t.id === overId);
+      if (overTaskIndex !== -1) {
+        destinationIndex = overTaskIndex;
       }
-      
-      if (overId !== targetColumnId) {
-        const overTaskIndex = newTasks[targetColumnId].findIndex(t => t.id === overId);
-        if (overTaskIndex !== -1) {
-          const newColumnTasks = [...newTasks[targetColumnId]];
-          newColumnTasks.splice(overTaskIndex, 0, updatedTask);
-          newTasks[targetColumnId] = newColumnTasks;
-        } else {
-          newTasks[targetColumnId] = [...newTasks[targetColumnId], updatedTask];
-        }
-      } else {
-        newTasks[targetColumnId] = [...newTasks[targetColumnId], updatedTask];
-      }
-      
-      return newTasks;
-    });
+    }
+    
+    onMoveTask(activeId, sourceColumnId, targetColumnId, sourceIndex, destinationIndex);
   };
 
-  const handleAddTask = (columnId, content) => {
-    setTasks(prev => {
-      const newTask = {
-        id: `task-${Date.now()}`,
-        content,
-        priority: 'normal',
-        columnStatus: columnId,
-        completed: columnId === 'done',
-        labels: [],
-        description: '',
-        dueDate: null,
-        assignedTo: null,
-        percentComplete: 0,
-      };
-
-      const columnTasks = prev[columnId] ? [...prev[columnId]] : [];
-      return {
-        ...prev,
-        [columnId]: [...columnTasks, newTask]
-      };
-    });
-  };
-
-  const handleAddColumn = (name) => {
-    const newId = `column-${Date.now()}`;
-
-    setColumns(prev => [...prev, { id: newId, name }]);
-    setTasks(prev => ({
-      ...prev,
-      [newId]: []
-    }));
-  };
-
-  const handleTaskClick = (taskId) => {
-    setSelectedTaskId(taskId);
-  };
-
-  const handleUpdateTask = (updatedTask) => {
-    setTasks(prev => {
-      const result = { ...prev };
-      let currentColumnId = null;
-      let taskIndex = -1;
-      let originalTask = null;
-
-      for (const colId in result) {
-         if (Array.isArray(result[colId])) {
-             const idx = result[colId].findIndex(t => t.id === updatedTask.id);
-             if (idx !== -1) {
-                 currentColumnId = colId;
-                 taskIndex = idx;
-                 originalTask = result[colId][idx];
-                 break;
-             }
-         }
-      }
-
-      if (!currentColumnId || !originalTask) {
-           return prev;
-      }
-
-      const finalTask = { ...originalTask, ...updatedTask };
-      const targetColStatus = finalTask.columnStatus || currentColumnId;
-
-      if (currentColumnId !== targetColStatus) {
-        result[currentColumnId].splice(taskIndex, 1);
-        finalTask.columnStatus = targetColStatus;
-        finalTask.completed = targetColStatus === 'done' ? true : finalTask.completed;
-
-        if (!result[targetColStatus]) {
-          result[targetColStatus] = [];
-        }
-        if (!Array.isArray(result[targetColStatus])) {
-            result[targetColStatus] = [];
-        }
-        result[targetColStatus].push(finalTask);
-      } else {
-        finalTask.columnStatus = currentColumnId;
-        finalTask.completed = currentColumnId === 'done' ? true : finalTask.completed;
-        if (Array.isArray(result[currentColumnId])) {
-            result[currentColumnId][taskIndex] = finalTask;
-        }
-      }
-
+  const handleCreateTask = (columnId, content) => {
+    const column = columns.find(c => c.id === columnId);
+    
+    if (!column) {
+      console.error('Column not found in BoardView');
+      return;
+    }
+    
+    if (!column.boardId) {
+      console.error('Column missing boardId:', column);
+      return;
+    }
+    
+    try {
+      const result = onCreateTask(columnId, content);
       return result;
-    });
-  };
-
-  const handleDeleteTask = (taskId) => {
-    setTasks(prev => {
-      const result = { ...prev };
-      for (const columnId in result) {
-         if (Array.isArray(result[columnId])) {
-             result[columnId] = result[columnId].filter(t => t.id !== taskId);
-         }
-      }
-      return result;
-    });
+    } catch (error) {
+      console.error('Error in BoardView handleCreateTask:', error);
+    }
   };
 
   const activeTask = activeTaskId ? getTaskById(activeTaskId) : null;
-  const selectedTask = selectedTaskId ? getTaskById(selectedTaskId) : null;
+  // const selectedTask = selectedTaskId ? getTaskById(selectedTaskId) : null;
 
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
       <header className="px-6 py-4 border-b border-gray-800 flex-shrink-0">
-        <h1 className="text-xl font-bold">Project Tasks</h1>
+        <div className="flex items-center">
+          <button 
+            className="flex items-center mr-4 px-3 py-1.5 text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-md transition-colors"
+            onClick={onBack}
+          >
+            <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 19L8 12L15 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Back
+          </button>
+          <h1 className="text-xl font-bold">{board.name}</h1>
+          {board.description && (
+            <span className="ml-4 text-gray-400 text-sm">- {board.description}</span>
+          )}
+        </div>
       </header>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center flex-1">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={pointerWithin}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="flex h-full space-x-4">
-              {columns.map(column => (
-                <Column
-                  key={column.id}
-                  column={column}
-                  tasks={tasks[column.id] || []}
-                  onTaskClick={handleTaskClick}
-                  onAddTask={handleAddTask}
-                />
-              ))}
+      <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={pointerWithin}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex h-full space-x-4">
+            {columns.map(column => (
+              <Column
+                key={column.id}
+                column={column}
+                tasks={getTasks(column.id)}
+                onTaskClick={handleTaskClick}
+                onOpenCreate={handleOpenCreate}
+              />
+            ))}
 
-              <AddColumn onAddColumn={handleAddColumn} />
+            <AddColumn onAddColumn={onCreateColumn} />
 
-              <DragOverlay>
-                {activeTask && (
-                  <div
-                    className="w-[300px]"
-                    style={{
-                      pointerEvents: 'none',
-                      transform: 'rotate(2deg)',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    <TaskCard task={activeTask} isDragging={true} />
-                  </div>
-                )}
-              </DragOverlay>
-            </div>
-          </DndContext>
-        </div>
-      )}
+            <DragOverlay>
+              {activeTask && (
+                <div
+                  className="w-[300px]"
+                  style={{
+                    pointerEvents: 'none',
+                    transform: 'rotate(2deg)',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  <TaskCard task={activeTask} isDragging={true} />
+                </div>
+              )}
+            </DragOverlay>
+          </div>
+        </DndContext>
+      </div>
 
-      {selectedTaskId && selectedTask && (
+      {/* {selectedTaskId && selectedTask && (
         <TaskDetailModal
           task={selectedTask}
           onClose={() => setSelectedTaskId(null)}
-          onUpdate={handleUpdateTask}
-          onDelete={handleDeleteTask}
+          onUpdate={onUpdateTask}
+          onDelete={onDeleteTask}
+        />
+      )} */}
+
+      {modal.open && modal.mode === 'view' && (
+        <TaskViewModal
+          task={modal.taskId ? getTaskById(modal.taskId) : null}
+          onClose={closeModal}
+          onEdit={() => switchModal('edit')}
+        />
+      )}
+
+      {modal.open && (modal.mode === 'edit' || modal.mode === 'create') && (
+        <TaskEditModal
+          mode={modal.mode}
+          task={modal.taskId ? getTaskById(modal.taskId) : null}
+          columnId={modal.columnId}
+          onClose={closeModal}
+          onCreate={createTaskWithDetails}
+          onUpdate={onUpdateTask}
+          onDelete={deleteAndClose}
         />
       )}
 
@@ -899,4 +1036,4 @@ const KanbanBoard = () => {
   );
 };
 
-export default KanbanBoard;
+export default BoardView;

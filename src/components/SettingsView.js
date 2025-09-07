@@ -1,6 +1,7 @@
 // src/components/SettingsView.js
 import React, { useState, useEffect } from 'react';
 import { downloadExportFile, readImportFile, importData } from '../data/export-import';
+import { getStorageStatus, clearDatabase, getPersistence, ydoc } from '../data/store';
 
 const SettingsView = ({ 
   onBack, 
@@ -15,26 +16,26 @@ const SettingsView = ({
   const [betaFeedbackEmail, setBetaFeedbackEmail] = useState('');
   const [currentTheme, setCurrentTheme] = useState(isDarkMode ? 'dark' : 'light');
   
-  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
+  const [storageStatus, setStorageStatus] = useState({ isMemoryMode: false, hasPersistence: true });
+  const [isClearingStorage, setIsClearingStorage] = useState(false);
+  const [storageUsage, setStorageUsage] = useState({ used: 0, quota: 0, percentage: 0 });
+
+useEffect(() => {
+
+  const savedTheme = localStorage.getItem('chalk_theme');
+  if (savedTheme) {
+    setCurrentTheme(savedTheme);
+  }
   
-  useEffect(() => {
-    const hasPassword = localStorage.getItem('chalk_password_hash') !== null;
-    setIsPasswordProtected(hasPassword);
-    
-    const savedTheme = localStorage.getItem('chalk_theme');
-    if (savedTheme) {
-      setCurrentTheme(savedTheme);
-    }
-  }, []);
+  setStorageStatus(getStorageStatus());
+  checkStorageQuota();
+}, []);
   
   const handleImportFile = async (e) => {
     try {
       const file = e.target.files[0];
-      if (!file) return;
+      if (!file) 
+        return;
       
       const jsonData = await readImportFile(file);
       const result = await importData(jsonData);
@@ -53,58 +54,40 @@ const SettingsView = ({
   
   const handleSubmitFeedback = (e) => {
     e.preventDefault();
-    window.open(`mailto:your-beta-feedback@example.com?subject=Chalk Beta Feedback&body=Email: ${betaFeedbackEmail}%0A%0AFeedback:%0A%0A`, '_blank');
+    window.open(`mailto:aaronoh2015@gmail.com?subject=Chalk Beta Feedback&body=Email: ${betaFeedbackEmail}%0A%0AFeedback:%0A%0A`, '_blank');
     setBetaFeedbackEmail('');
   };
 
-  const handleSetPassword = () => {
-    if (!newPassword) {
-      setPasswordError('Password cannot be empty');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match');
-      return;
-    }
-    
-    localStorage.setItem('chalk_password_hash', 'hashed_' + newPassword);
-    setIsPasswordProtected(true);
-    setNewPassword('');
-    setConfirmPassword('');
-    setPasswordError('');
-  };
-  
-  const handleChangePassword = () => {
-    const storedHash = localStorage.getItem('chalk_password_hash');
-    const currentHash = 'hashed_' + currentPassword;
-    
-    if (currentHash !== storedHash) {
-      setPasswordError('Current password is incorrect');
-      return;
-    }
-    
-    if (!newPassword) {
-      localStorage.removeItem('chalk_password_hash');
-      setIsPasswordProtected(false);
-    } else {
-      if (newPassword !== confirmPassword) {
-        setPasswordError('New passwords do not match');
-        return;
-      }
-      
-      localStorage.setItem('chalk_password_hash', 'hashed_' + newPassword);
-    }
-    
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setPasswordError('');
-  };
-  
   const handleThemeChange = (theme) => {
     setCurrentTheme(theme);
     localStorage.setItem('chalk_theme', theme);
     onThemeChange(theme);
+  };
+  
+  const handleClearStorage = async () => {
+    if (confirm('This will clear all data and restart the app. Are you sure?')) {
+      setIsClearingStorage(true);
+      await clearDatabase();
+    }
+  };
+
+  const checkStorageQuota = async () => {
+    try {
+      if ('storage' in navigator && 'estimate' in navigator.storage) {
+        const estimate = await navigator.storage.estimate();
+        const used = estimate.usage || 0;
+        const quota = estimate.quota || 0;
+        const percentage = quota > 0 ? (used / quota) * 100 : 0;
+        
+        setStorageUsage({
+          used: (used / 1024 / 1024).toFixed(1),
+          quota: (quota / 1024 / 1024).toFixed(1),
+          percentage: percentage.toFixed(1)
+        });
+      }
+    } catch (error) {
+      console.error('Storage quota check failed:', error);
+    }
   };
   
   return (
@@ -231,80 +214,79 @@ const SettingsView = ({
             </div>
 
             <div>
-              <h4 className="text-white font-medium mb-2">Password Protection</h4>
-              <p className="text-gray-400 text-sm mb-2">
-                Add a password to protect your data from unauthorized access.
-              </p>
-              
-              {!isPasswordProtected ? (
-                <div className="space-y-3">
-                  <div>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Create a password"
-                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-2"
-                    />
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm password"
-                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                    {passwordError && (
-                      <p className="mt-1 text-sm text-red-400">{passwordError}</p>
-                    )}
-                  </div>
-                  <button
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors"
-                    onClick={handleSetPassword}
-                  >
-                    Set Password
-                  </button>
+              <h4 className="text-white font-medium mb-2">Storage Status</h4>
+              <div className="space-y-3">
+                <div className={`p-3 rounded-md text-sm ${
+                  storageStatus.isMemoryMode 
+                    ? 'bg-orange-900/30 border border-orange-800 text-orange-300'
+                    : 'bg-green-900/30 border border-green-800 text-green-300'
+                }`}>
+                  {storageStatus.isMemoryMode ? (
+                    <>⚠️ Running in temporary mode - changes won't be saved</>
+                  ) : (
+                    <>✅ Data is being saved locally</>
+                  )}
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="bg-green-900/30 border border-green-800 rounded-md p-2 text-sm text-green-400">
-                    Password protection is enabled
+                
+                {storageUsage.quota > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm text-gray-300">
+                      <span>Storage Used</span>
+                      <span>{storageUsage.used} MB / {storageUsage.quota} MB</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-3">
+                      <div 
+                        className={`h-3 rounded-full transition-all duration-300 ${
+                          storageUsage.percentage > 90 ? 'bg-red-500' :
+                          storageUsage.percentage > 75 ? 'bg-yellow-500' :
+                          'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(storageUsage.percentage, 100)}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {storageUsage.percentage}% used
+                      {storageUsage.percentage > 90 && ' - Storage almost full!'}
+                    </p>
                   </div>
-                  <div>
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Current password"
-                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-2"
-                    />
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="New password (leave empty to remove)"
-                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-2"
-                    />
-                    {newPassword && (
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Confirm new password"
-                        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                    )}
-                    {passwordError && (
-                      <p className="mt-1 text-sm text-red-400">{passwordError}</p>
-                    )}
-                  </div>
+                )}
+                
+                <p className="text-gray-400 text-sm">
+                  Database: {storageStatus.hasPersistence ? 'Connected' : 'Not Available'}
+                </p>
+                
+                {(storageStatus.isMemoryMode || storageUsage.percentage > 90) && (
                   <button
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors"
-                    onClick={handleChangePassword}
+                    onClick={handleClearStorage}
+                    disabled={isClearingStorage}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded-md transition-colors"
                   >
-                    {newPassword ? 'Change Password' : 'Remove Password'}
+                    {isClearingStorage ? 'Fixing...' : 'Fix Storage Issues'}
                   </button>
-                </div>
-              )}
+                )}
+                
+                <div className="flex space-x-2">
+                <button
+                  onClick={checkStorageQuota}
+                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors"
+                >
+                  Refresh Usage
+                </button>
+                
+                <button
+                  onClick={async () => {
+                    if (confirm('This will clear ALL your data and restart the app. This cannot be undone!')) {
+                      setIsClearingStorage(true);
+                      await clearDatabase();
+                    }
+                  }}
+                  disabled={isClearingStorage}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-md transition-colors"
+                >
+                  {isClearingStorage ? 'Clearing...' : 'Clear All Storage'}
+                </button>
+              </div>
+              </div>
             </div>
             
             <div>
@@ -408,7 +390,7 @@ const SettingsView = ({
             </p>
             <div className="pt-3 border-t border-gray-700 mt-3">
               <p className="text-gray-400 text-sm">
-                © 2023 Chalk App. All rights reserved.
+                © 2025 Chalk. All rights reserved.
               </p>
             </div>
           </div>

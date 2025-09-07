@@ -133,7 +133,9 @@ const DashboardView = ({
   };
   
   const isOverdue = (dateString) => {
-    if (!dateString) return false;
+    if (!dateString) 
+      return false;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const dueDate = new Date(dateString);
@@ -142,7 +144,9 @@ const DashboardView = ({
   };
   
   const formatDate = (dateString) => {
-    if (!dateString) return '';
+    if (!dateString) 
+      return '';
+    
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
