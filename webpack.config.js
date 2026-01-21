@@ -12,7 +12,7 @@ module.exports = {
     path: path.resolve(__dirname, 'dist'),
     filename: 'bundle.[contenthash].js',
     chunkFilename: 'chunk.[contenthash].js',
-    publicPath: './', 
+    publicPath: '', 
     clean: true
   },
   module: {
@@ -51,7 +51,6 @@ module.exports = {
           <head>
             <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <base href="./" />
             <title>Chalk</title>
           </head>
           <body>
